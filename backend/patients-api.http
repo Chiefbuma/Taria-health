@@ -1,0 +1,145 @@
+@baseUrl = http://localhost:8080/api
+@contentType = application/json
+
+### 1. Register a new user (if needed)
+POST {{baseUrl}}/register
+Content-Type: {{contentType}}
+
+{
+  "name": "API Tester",
+  "email": "tester@example.com",
+  "phone": "1234567890",
+  "password": "password",
+  "password_confirmation": "password"
+}
+
+### 2. Login to get token
+# @name login
+POST {{baseUrl}}/login
+Content-Type: {{contentType}}
+
+{
+  "phone": "1234567890",
+  "password": "password"
+}
+
+### 3. Store auth token from login response
+@authToken = {{login.response.body.token}}
+
+### 4. Create new patient
+# @name createPatient
+POST {{baseUrl}}/patient-names
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+{
+  "first_name": "John",
+  "last_name": "Doe"
+}
+
+
+### 5. Store patient ID from response
+@patientId = {{createPatient.response.body.data.id}}
+Only JSON and XML response/request body is supported to query the result
+
+
+### 6. Get all patients
+GET {{baseUrl}}/patient-names
+Authorization: Bearer {{authToken}}
+Accept: {{contentType}}
+
+### 7. Get specific patient
+GET {{baseUrl}}/patient-names/{{patientId}}
+Authorization: Bearer {{authToken}}
+Accept: {{contentType}}
+
+### 8. Full update patient (PUT)
+PUT {{baseUrl}}/patient-names/{{patientId}}
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+{
+  "first_name": "Jonathan",
+  "last_name": "Doe-Smith",
+  "is_active": true
+}
+
+### 9. Partial update patient (PATCH)
+PATCH {{baseUrl}}/patient-names/{{patientId}}
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+{
+  "last_name": "Doe"
+}
+
+### 10. Search patients
+GET {{baseUrl}}/patient-names/search?last_name=Doe
+Authorization: Bearer {{authToken}}
+Accept: {{contentType}}
+
+### 11. Activate patient
+POST {{baseUrl}}/patient-names/{{patientId}}/activate
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+### 12. Deactivate patient
+POST {{baseUrl}}/patient-names/{{patientId}}/deactivate
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+### 13. Get active patients
+GET {{baseUrl}}/patient-names/active
+Authorization: Bearer {{authToken}}
+Accept: {{contentType}}
+
+### 14. Get inactive patients
+GET {{baseUrl}}/patient-names/inactive
+Authorization: Bearer {{authToken}}
+Accept: {{contentType}}
+
+### 15. Delete patient (cleanup)
+DELETE {{baseUrl}}/patient-names/{{patientId}}
+Authorization: Bearer {{authToken}}
+
+
+### 16. Get all medications
+GET {{baseUrl}}/medications
+Authorization: Bearer {{authToken}}
+Accept: {{contentType}}
+
+### 17. Create new medication (admin only)
+# @name createMedication
+POST {{baseUrl}}/medication
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+{
+  "item_name": "Test Medication 100Mg"
+}
+
+### 18. Store medication ID from response
+@medicationId = {{createMedication.response.body.medication.medication_id}}
+
+### 19. Get specific medication
+GET {{baseUrl}}/medications/{{medicationId}}
+Authorization: Bearer {{authToken}}
+Accept: {{contentType}}
+
+### 20. Update medication (admin only)
+PUT {{baseUrl}}/medications/{{medicationId}}
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+{
+  "item_name": "Updated Test Medication 200Mg"
+}
+
+### 21. Delete medication (admin only, soft delete)
+DELETE {{baseUrl}}/medications/{{medicationId}}
+Authorization: Bearer {{authToken}}
+
+### 22. Restore deleted medication (admin only)
+POST {{baseUrl}}/medications/{{medicationId}}/restore
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}

@@ -35,6 +35,8 @@ class AccountController extends Controller
                 'email' => $request->email,
                 'phone' => $request->phone,
                 'password' => Hash::make($request->password),
+                'role' => User::ROLE_USER, // Default role
+                'is_active' => true, // Default active status
             ]);
 
             $token = $user->createToken('auth_token')->plainTextToken;
@@ -42,7 +44,7 @@ class AccountController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Registration successful',
-                'user' => $user->only(['id', 'name', 'email', 'phone']),
+                'user' => $user->only(['id', 'name', 'email', 'phone', 'role', 'is_active']),
                 'token' => $token,
             ], 201);
 
@@ -83,12 +85,20 @@ class AccountController extends Controller
                 ], 401);
             }
 
+            // Check if user is active
+            if (!$user->is_active) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Your account has been deactivated. Please contact admin.'
+                ], 403);
+            }
+
             $token = $user->createToken('auth_token')->plainTextToken;
 
             return response()->json([
                 'success' => true,
                 'message' => 'Login successful',
-                'user' => $user->only(['id', 'name', 'email', 'phone']),
+                'user' => $user->only(['id', 'name', 'email', 'phone', 'role', 'is_active']),
                 'token' => $token,
             ]);
 
@@ -102,12 +112,20 @@ class AccountController extends Controller
     }
 
     /**
-     * Get all users.
+     * Get all users (admin only).
      */
     public function getUsers(Request $request)
     {
         try {
-            $users = User::select('id', 'name', 'email', 'phone', 'created_at', 'updated_at')->get();
+            // Check if user is admin
+            if (!$request->user()->isAdmin()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $users = User::select('id', 'name', 'email', 'phone', 'role', 'is_active', 'created_at', 'updated_at')->get();
             
             return response()->json([
                 'success' => true,
@@ -124,6 +142,60 @@ class AccountController extends Controller
     }
 
     /**
+     * Update user role or status (admin only).
+     */
+    public function updateUser(Request $request, $id)
+    {
+        try {
+            // Check if user is admin
+            if (!$request->user()->isAdmin()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'role' => 'sometimes|in:admin,user,editor',
+                'is_active' => 'sometimes|boolean',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation errors',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $user = User::findOrFail($id);
+
+            // Prevent admin from modifying themselves
+            if ($user->id === $request->user()->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot modify your own account'
+                ], 403);
+            }
+
+            $user->update($request->only(['role', 'is_active']));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User updated successfully',
+                'user' => $user->only(['id', 'name', 'email', 'phone', 'role', 'is_active'])
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update user',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Get authenticated user.
      */
     public function getUser(Request $request)
@@ -131,7 +203,7 @@ class AccountController extends Controller
         try {
             return response()->json([
                 'success' => true,
-                'user' => $request->user()->only(['id', 'name', 'email', 'phone'])
+                'user' => $request->user()->only(['id', 'name', 'email', 'phone', 'role', 'is_active'])
             ], 200);
 
         } catch (\Exception $e) {
