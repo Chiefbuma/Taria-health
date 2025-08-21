@@ -15,7 +15,9 @@ class User extends Authenticatable
 
     const ROLE_ADMIN = 'admin';
     const ROLE_USER = 'user';
-    const ROLE_EDITOR = 'editor';
+    const ROLE_NAVIGATOR = 'navigator';
+    const ROLE_PAYER = 'payer';
+    const ROLE_GUEST = 'guest';
     
     /**
      * The attributes that are mass assignable.
@@ -23,12 +25,12 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'name',
         'email',
         'phone',
         'password',
         'role',
         'is_active',
+        'payer_id', // Added payer_id
     ];
 
     /**
@@ -70,5 +72,13 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return $this->is_active;
+    }
+
+    /**
+     * Get the payer associated with the user.
+     */
+    public function payer()
+    {
+        return $this->belongsTo(Payer::class);
     }
 }

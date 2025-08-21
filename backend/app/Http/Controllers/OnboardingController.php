@@ -3,27 +3,23 @@
 namespace App\Http\Controllers;
 
 use App\Models\Onboarding;
-use App\Models\MpesaPayment;
-use App\Models\Insurance;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Database\QueryException;
 
 class OnboardingController extends Controller
 {
     public function store(Request $request)
     {
-        Log::info('Onboarding request received:', $request->all());
-
         $validator = Validator::make($request->all(), [
             'user_id' => 'required|exists:users,id',
             'first_name' => 'required|string|max:255',
+            'middle_name' => 'nullable|string|max:255',
             'last_name' => 'required|string|max:255',
-            'patient_no' => 'required|string|max:255|unique:onboardings,patient_no',
-            'clinic_id' => 'required|exists:clinics,id',
-            'age' => 'required|integer|min:0|max:120',
+            'date_of_birth' => 'required|date',
+            'age' => 'required|integer|min:0',
             'sex' => 'required|in:male,female,other',
+            'clinic_id' => 'required|exists:clinics,id',
             'date_of_onboarding' => 'required|date',
             'emergency_contact_name' => 'required|string|max:255',
             'emergency_contact_phone' => 'required|string|max:20',
@@ -32,116 +28,86 @@ class OnboardingController extends Controller
             'consent_to_risks' => 'required|boolean',
             'consent_to_data_use' => 'required|boolean',
             'consent_date' => 'required|date',
-            'payment_method' => 'required|in:mpesa,insurance',
-            'payment_id' => 'required|integer',
+            'payment_method' => 'nullable|in:mpesa,insurance',
+            'payment_id' => 'nullable|integer',
+            'payment_status' => 'nullable|in:pending,completed',
+            'mpesa_number' => 'nullable|string|max:20',
+            'mpesa_reference' => 'nullable|string|max:255',
+            'insurance_provider' => 'nullable|string|max:255',
+            'insurance_id' => 'nullable|exists:insurance,id',
         ]);
 
         if ($validator->fails()) {
-            Log::error('Validation failed:', $validator->errors()->toArray());
             return response()->json([
                 'status' => 'error',
-                'message' => 'Validation errors',
-                'errors' => $validator->errors()
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         try {
-            // Check if user is already onboarded
+            // Check for existing onboarding record
             if (Onboarding::where('user_id', $request->user_id)->exists()) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'User already onboarded'
-                ], 409);
-            }
-
-            // Verify payment
-            $paymentVerified = false;
-            $paymentMethod = $request->payment_method;
-            $paymentId = $request->payment_id;
-
-            if ($paymentMethod === 'mpesa') {
-                $payment = MpesaPayment::where('id', $paymentId)
-                    ->where('status', 'completed')
-                    ->first();
-                if (!$payment) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'M-Pesa payment not completed or not found'
-                    ], 400);
-                }
-                $paymentVerified = true;
-            } elseif ($paymentMethod === 'insurance') {
-                $payment = Insurance::where('id', $paymentId)->first();
-                if (!$payment) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Insurance record not found'
-                    ], 400);
-                }
-                $paymentVerified = true;
-            }
-
-            if (!$paymentVerified) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Payment verification failed'
+                    'message' => 'Onboarding record already exists for this user',
                 ], 400);
             }
 
-            // Create onboarding and update payment record in a transaction
-            $onboarding = DB::transaction(function () use ($request, $paymentMethod, $paymentId) {
-                $onboarding = Onboarding::create([
-                    'user_id' => $request->user_id,
-                    'first_name' => $request->first_name,
-                    'last_name' => $request->last_name,
-                    'patient_no' => $request->patient_no,
-                    'clinic_id' => $request->clinic_id,
-                    'age' => $request->age,
-                    'sex' => $request->sex,
-                    'date_of_onboarding' => $request->date_of_onboarding,
-                    'emergency_contact_name' => $request->emergency_contact_name,
-                    'emergency_contact_phone' => $request->emergency_contact_phone,
-                    'emergency_contact_relation' => $request->emergency_contact_relation,
-                    'consent_to_telehealth' => $request->consent_to_telehealth,
-                    'consent_to_risks' => $request->consent_to_risks,
-                    'consent_to_data_use' => $request->consent_to_data_use,
-                    'consent_date' => $request->consent_date,
-                    'payment_method' => $paymentMethod,
-                    'payment_id' => $paymentId,
-                    'is_active' => true,
-                ]);
-
-                // Update payment record with onboarding_id
-                if ($paymentMethod === 'mpesa') {
-                    MpesaPayment::where('id', $paymentId)
-                        ->update(['onboarding_id' => $onboarding->id]);
-                } elseif ($paymentMethod === 'insurance') {
-                    Insurance::where('id', $paymentId)
-                        ->update(['onboarding_id' => $onboarding->id]);
-                }
-
-                return $onboarding;
-            });
-
-            Log::info('Onboarding successful:', ['onboarding_id' => $onboarding->id]);
+            $onboarding = Onboarding::create([
+                'user_id' => $request->user_id,
+                'first_name' => $request->first_name,
+                'middle_name' => $request->middle_name,
+                'last_name' => $request->last_name,
+                'date_of_birth' => $request->date_of_birth,
+                'age' => $request->age,
+                'sex' => $request->sex,
+                'clinic_id' => $request->clinic_id,
+                'date_of_onboarding' => $request->date_of_onboarding,
+                'emergency_contact_name' => $request->emergency_contact_name,
+                'emergency_contact_phone' => $request->emergency_contact_phone,
+                'emergency_contact_relation' => $request->emergency_contact_relation,
+                'consent_to_telehealth' => $request->consent_to_telehealth,
+                'consent_to_risks' => $request->consent_to_risks,
+                'consent_to_data_use' => $request->consent_to_data_use,
+                'consent_date' => $request->consent_date,
+                'payment_method' => $request->payment_method,
+                'payment_id' => $request->payment_id,
+                'payment_status' => $request->payment_status,
+                'mpesa_number' => $request->mpesa_number,
+                'mpesa_reference' => $request->mpesa_reference,
+                'insurance_provider' => $request->insurance_provider,
+                'insurance_id' => $request->insurance_id,
+                'is_active' => false,
+            ]);
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Patient onboarded successfully',
-                'data' => [
-                    'onboarding' => $onboarding,
-                    'payment_method' => $paymentMethod,
-                    'payment_id' => $paymentId
-                ]
+                'message' => 'Onboarding created successfully',
+                'data' => $onboarding,
             ], 201);
-
-        } catch (\Exception $e) {
-            Log::error('Onboarding error:', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+        } catch (QueryException $e) {
+            \Log::error('Onboarding creation failed: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'sql' => $e->getSql(),
+                'bindings' => $e->getBindings(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => 'An error occurred during onboarding',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+                'error' => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    public function check($userId)
+    {
+        try {
+            $exists = Onboarding::where('user_id', $userId)->exists();
+            return response()->json(['exists' => $exists], 200);
+        } catch (\Exception $e) {
+            \Log::error('Onboarding check failed for user_id: ' . $userId, ['error' => $e->getMessage()]);
+            return response()->json(['error' => 'Server error'], 500);
         }
     }
 }

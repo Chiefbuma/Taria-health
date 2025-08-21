@@ -7,8 +7,8 @@ Content-Type: {{contentType}}
 
 {
   "name": "API Tester",
-  "email": "tester@example.com",
-  "phone": "1234567890",
+  "email": "tester2@example.com",
+  "phone": "12345678930",
   "password": "password",
   "password_confirmation": "password"
 }
@@ -37,11 +37,8 @@ Content-Type: {{contentType}}
   "last_name": "Doe"
 }
 
-
 ### 5. Store patient ID from response
 @patientId = {{createPatient.response.body.data.id}}
-Only JSON and XML response/request body is supported to query the result
-
 
 ### 6. Get all patients
 GET {{baseUrl}}/patient-names
@@ -102,7 +99,6 @@ Accept: {{contentType}}
 DELETE {{baseUrl}}/patient-names/{{patientId}}
 Authorization: Bearer {{authToken}}
 
-
 ### 16. Get all medications
 GET {{baseUrl}}/medications
 Authorization: Bearer {{authToken}}
@@ -143,3 +139,52 @@ Authorization: Bearer {{authToken}}
 POST {{baseUrl}}/medications/{{medicationId}}/restore
 Authorization: Bearer {{authToken}}
 Content-Type: {{contentType}}
+
+### 23. Register a test user for user-related tests
+# @name createTestUser
+POST {{baseUrl}}/register
+Content-Type: {{contentType}}
+
+{
+  "name": "Test User",
+  "email": "testuser23@example.com",
+  "phone": "09876544321",
+  "role": "admin",
+  "password": "password",
+  "password_confirmation": "password"
+}
+
+### 24. Store test user ID from response
+@testUserId = {{createTestUser.response.body.data.id}}
+
+### 25. Get all users (admin only)
+GET {{baseUrl}}/users
+Authorization: Bearer {{authToken}}
+Accept: {{contentType}}
+
+### 26. Get authenticated user
+GET {{baseUrl}}/user
+Authorization: Bearer {{authToken}}
+Accept: {{contentType}}
+
+### 27. Update user (admin only)
+PUT {{baseUrl}}/users/{{testUserId}}
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Updated Test User",
+  "email": "updated.testuser@example.com",
+  "phone": "0987654321",
+  "role": "navigator",
+  "is_active": true
+}
+
+### 28. Delete user (admin only)
+DELETE {{baseUrl}}/user/delete
+Authorization: Bearer {{authToken}}
+Content-Type: {{contentType}}
+
+{
+  "id": {{testUserId}}
+}

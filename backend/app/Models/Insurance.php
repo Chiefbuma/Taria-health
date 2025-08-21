@@ -15,14 +15,14 @@ class Insurance extends Model
         'onboarding_id',
         'insurance_provider',
         'policy_number',
-        'insurance_type',
         'is_approved',
-        'user_id', // Added if used in InsuranceController
+        'user_id',
+        'claim_amount',
+        'approval_document_path',
+        'approval_document_name',
     ];
 
-    protected $casts = [
-        'is_approved' => 'boolean',
-    ];
+   
 
     public function onboarding()
     {

@@ -15,10 +15,10 @@ class AccountController extends Controller
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'phone' => 'required|string|max:20|unique:users',
             'password' => 'required|string|min:6|confirmed',
+            'role' => 'sometimes|in:admin,user,navigator,payer,guest',
         ]);
 
         if ($validator->fails()) {
@@ -31,12 +31,11 @@ class AccountController extends Controller
 
         try {
             $user = User::create([
-                'name' => $request->name,
                 'email' => $request->email,
                 'phone' => $request->phone,
                 'password' => Hash::make($request->password),
-                'role' => User::ROLE_USER, // Default role
-                'is_active' => true, // Default active status
+                'role' => $request->role ?? User::ROLE_USER,
+                'is_active' => true,
             ]);
 
             $token = $user->createToken('auth_token')->plainTextToken;
@@ -44,7 +43,7 @@ class AccountController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Registration successful',
-                'user' => $user->only(['id', 'name', 'email', 'phone', 'role', 'is_active']),
+                'user' => $user->only(['id', 'email', 'phone', 'role', 'is_active']),
                 'token' => $token,
             ], 201);
 
@@ -85,7 +84,6 @@ class AccountController extends Controller
                 ], 401);
             }
 
-            // Check if user is active
             if (!$user->is_active) {
                 return response()->json([
                     'success' => false,
@@ -98,7 +96,7 @@ class AccountController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Login successful',
-                'user' => $user->only(['id', 'name', 'email', 'phone', 'role', 'is_active']),
+                'user' => $user->only(['id', 'email', 'phone', 'role', 'is_active']),
                 'token' => $token,
             ]);
 
@@ -117,7 +115,6 @@ class AccountController extends Controller
     public function getUsers(Request $request)
     {
         try {
-            // Check if user is admin
             if (!$request->user()->isAdmin()) {
                 return response()->json([
                     'success' => false,
@@ -125,8 +122,8 @@ class AccountController extends Controller
                 ], 403);
             }
 
-            $users = User::select('id', 'name', 'email', 'phone', 'role', 'is_active', 'created_at', 'updated_at')->get();
-            
+            $users = User::select('id', 'email', 'phone', 'role', 'is_active', 'created_at', 'updated_at')->get();
+
             return response()->json([
                 'success' => true,
                 'users' => $users
@@ -142,12 +139,11 @@ class AccountController extends Controller
     }
 
     /**
-     * Update user role or status (admin only).
+     * Update user (admin only).
      */
     public function updateUser(Request $request, $id)
     {
         try {
-            // Check if user is admin
             if (!$request->user()->isAdmin()) {
                 return response()->json([
                     'success' => false,
@@ -156,8 +152,11 @@ class AccountController extends Controller
             }
 
             $validator = Validator::make($request->all(), [
-                'role' => 'sometimes|in:admin,user,editor',
+                'email' => 'sometimes|string|email|max:255|unique:users,email,' . $id,
+                'phone' => 'sometimes|string|max:20|unique:users,phone,' . $id,
+                'role' => 'sometimes|in:admin,user,navigator,payer,guest',
                 'is_active' => 'sometimes|boolean',
+                'password' => 'sometimes|string|min:6|confirmed',
             ]);
 
             if ($validator->fails()) {
@@ -170,7 +169,6 @@ class AccountController extends Controller
 
             $user = User::findOrFail($id);
 
-            // Prevent admin from modifying themselves
             if ($user->id === $request->user()->id) {
                 return response()->json([
                     'success' => false,
@@ -178,18 +176,72 @@ class AccountController extends Controller
                 ], 403);
             }
 
-            $user->update($request->only(['role', 'is_active']));
+            $data = $request->only(['email', 'phone', 'role', 'is_active']);
+            if ($request->has('password')) {
+                $data['password'] = Hash::make($request->password);
+            }
+            $user->update($data);
 
             return response()->json([
                 'success' => true,
                 'message' => 'User updated successfully',
-                'user' => $user->only(['id', 'name', 'email', 'phone', 'role', 'is_active'])
+                'user' => $user->only(['id', 'email', 'phone', 'role', 'is_active'])
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update user',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a user (admin only).
+     */
+    public function delete(Request $request)
+    {
+        try {
+            if (!$request->user()->isAdmin()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'id' => 'required|integer|exists:users,id',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation errors',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $user = User::findOrFail($request->id);
+
+            if ($user->id === $request->user()->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You cannot delete your own account'
+                ], 403);
+            }
+
+            $user->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User deleted successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete user',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -203,7 +255,7 @@ class AccountController extends Controller
         try {
             return response()->json([
                 'success' => true,
-                'user' => $request->user()->only(['id', 'name', 'email', 'phone', 'role', 'is_active'])
+                'user' => $request->user()->only(['id', 'email', 'phone', 'role', 'is_active'])
             ], 200);
 
         } catch (\Exception $e) {

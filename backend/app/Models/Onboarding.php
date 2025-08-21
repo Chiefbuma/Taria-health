@@ -13,15 +13,12 @@ class Onboarding extends Model
     protected $fillable = [
         'user_id',
         'first_name',
+        'middle_name',
         'last_name',
-        'patient_no',
-        'emr_number',
-        'payer_id',
-        'clinic_id',
-        'diagnoses',
-        'medications',
+        'date_of_birth',
         'age',
         'sex',
+        'clinic_id',
         'date_of_onboarding',
         'emergency_contact_name',
         'emergency_contact_phone',
@@ -59,16 +56,20 @@ class Onboarding extends Model
         'consent_date',
         'activation_code',
         'is_active',
-        'payment_method', // Added
-        'payment_id',     // Added
-        'payment_status', // Added
-        'mpesa_number',   // Added
-        'mpesa_reference', // Added
-        'insurance_provider', // Added
-        'insurance_id',   // Added
+        'payment_method',
+        'payment_id',
+        'payment_status',
+        'mpesa_number',
+        'mpesa_reference',
+        'insurance_provider',
+        'insurance_id',
+        'consent_to_telehealth',
+        'consent_to_risks',
+        'consent_to_data_use',
     ];
 
     protected $casts = [
+        'date_of_birth' => 'date',
         'date_of_onboarding' => 'date',
         'diagnoses' => 'array',
         'medications' => 'array',
@@ -91,9 +92,9 @@ class Onboarding extends Model
         'weight_loss_target' => 'decimal:2',
         'hba1c_target' => 'decimal:2',
         'deleted_at' => 'datetime',
-        'consent_to_telehealth' => 'boolean', // Added
-        'consent_to_risks' => 'boolean',      // Added
-        'consent_to_data_use' => 'boolean',   // Added
+        'consent_to_telehealth' => 'boolean',
+        'consent_to_risks' => 'boolean',
+        'consent_to_data_use' => 'boolean',
     ];
 
     public function user()
@@ -120,6 +121,8 @@ class Onboarding extends Model
 
     public function getFullNameAttribute()
     {
-        return "{$this->first_name} {$this->last_name}";
+        return $this->middle_name
+            ? "{$this->first_name} {$this->middle_name} {$this->last_name}"
+            : "{$this->first_name} {$this->last_name}";
     }
 }
