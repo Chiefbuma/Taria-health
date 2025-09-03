@@ -36,6 +36,7 @@ return new class extends Migration
             $table->foreignId('payer_id')->nullable()->constrained()->onDelete('set null');
             $table->foreignId('clinic_id')->nullable()->constrained('clinics', 'id')->onDelete('set null');
             $table->json('diagnoses')->nullable();
+            $table->date('date_of_diagnosis')->nullable();
             $table->json('medications')->nullable();
             $table->integer('age');
             $table->enum('sex', ['male', 'female', 'other']);

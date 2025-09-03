@@ -10,21 +10,28 @@ class Onboarding extends Model
 {
     use HasFactory, SoftDeletes;
 
+    protected $table = 'onboardings';
+
     protected $fillable = [
         'user_id',
         'first_name',
         'middle_name',
         'last_name',
         'date_of_birth',
+        'emr_number',
+        'payer_id',
+        'clinic_id',
+        'insurance_id',
+        'diagnoses',
+        'medications',
         'age',
         'sex',
-        'clinic_id',
         'date_of_onboarding',
         'emergency_contact_name',
         'emergency_contact_phone',
         'emergency_contact_relation',
         'brief_medical_history',
-        'years_since_diagnosis',
+        'date_of_diagnosis',
         'past_medical_interventions',
         'relevant_family_history',
         'hba1c_baseline',
@@ -56,42 +63,25 @@ class Onboarding extends Model
         'consent_date',
         'activation_code',
         'is_active',
+        'consent_to_telehealth',
+        'consent_to_risks',
+        'consent_to_data_use',
         'payment_method',
         'payment_id',
         'payment_status',
         'mpesa_number',
         'mpesa_reference',
         'insurance_provider',
-        'insurance_id',
-        'consent_to_telehealth',
-        'consent_to_risks',
-        'consent_to_data_use',
     ];
 
     protected $casts = [
-        'date_of_birth' => 'date',
-        'date_of_onboarding' => 'date',
         'diagnoses' => 'array',
         'medications' => 'array',
-        'initial_consultation_date' => 'date',
-        'follow_up_review1' => 'date',
-        'follow_up_review2' => 'date',
-        'additional_review' => 'date',
-        'consent_date' => 'date',
+        'is_active' => 'boolean',
         'has_weighing_scale' => 'boolean',
         'has_glucometer' => 'boolean',
         'has_bp_machine' => 'boolean',
         'has_tape_measure' => 'boolean',
-        'is_active' => 'boolean',
-        'hba1c_baseline' => 'decimal:2',
-        'ldl_baseline' => 'decimal:2',
-        'weight_baseline' => 'decimal:2',
-        'height' => 'decimal:2',
-        'bmi_baseline' => 'decimal:2',
-        'serum_creatinine_baseline' => 'decimal:2',
-        'weight_loss_target' => 'decimal:2',
-        'hba1c_target' => 'decimal:2',
-        'deleted_at' => 'datetime',
         'consent_to_telehealth' => 'boolean',
         'consent_to_risks' => 'boolean',
         'consent_to_data_use' => 'boolean',
@@ -102,27 +92,40 @@ class Onboarding extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function payer()
+    {
+        return $this->belongsTo(Payer::class);
+    }
+
     public function clinic()
     {
         return $this->belongsTo(Clinic::class);
     }
 
-    public function mpesaPayment()
-    {
-        return $this->hasOne(MpesaPayment::class, 'id', 'payment_id')
-                    ->where('payment_method', 'mpesa');
-    }
-
     public function insurance()
     {
-        return $this->hasOne(Insurance::class, 'id', 'payment_id')
-                    ->where('payment_method', 'insurance');
+        return $this->belongsTo(Insurance::class);
     }
 
-    public function getFullNameAttribute()
+    public function medicationUses()
     {
-        return $this->middle_name
-            ? "{$this->first_name} {$this->middle_name} {$this->last_name}"
-            : "{$this->first_name} {$this->last_name}";
+        return $this->hasMany(MedicationUse::class, 'onboarding_id');
+    }
+
+    public function mpesaPayment()
+    {
+        return $this->hasOne(MpesaPayment::class);
+    }
+
+    public function medications()
+    {
+        return $this->hasManyThrough(
+            Medication::class,
+            MedicationUse::class,
+            'onboarding_id',
+            'medication_id',
+            'id',
+            'medication_id'
+        );
     }
 }

@@ -38,9 +38,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/insurances/{id}', [InsuranceController::class, 'destroy']);
     Route::post('/insurances/{id}/approve', [InsuranceController::class, 'approve']);
     
-   
-    
-    
+    // Mpesa payment routes
     Route::post('/mpesa/initiate-payment', [MpesaPaymentController::class, 'initiate']);
     
     // Payer routes
@@ -70,8 +68,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/adminonboardings/{id}', [AdminOnboardingController::class, 'show']);
     Route::post('/adminonboardings', [AdminOnboardingController::class, 'store']);
     Route::put('/adminonboardings/{id}', [AdminOnboardingController::class, 'update']);
-    Route::post('/adminonboardings/{id}/complete', [AdminOnboardingController::class, 'complete']);
     Route::delete('/adminonboardings/{id}', [AdminOnboardingController::class, 'destroy']);
+    Route::post('/adminonboardings/{id}/complete', [AdminOnboardingController::class, 'complete']);
     
     // Assessment routes
     Route::get('/weekly-assessments', [WeeklyAssessmentController::class, 'index']);
@@ -86,22 +84,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/three-monthly-assessments/{id}', [ThreeMonthlyAssessmentController::class, 'update']);
     Route::delete('/three-monthly-assessments/{id}', [ThreeMonthlyAssessmentController::class, 'destroy']);
 
-    Route::get('/assessments', [AssessmentController::class, 'index']);
-    Route::post('/assessments', [AssessmentController::class, 'store']);
-    Route::get('/assessments/{id}', [AssessmentController::class, 'show']);
-    Route::put('/assessments/{id}', [AssessmentController::class, 'update']);
-    Route::delete('/assessments/{id}', [AssessmentController::class, 'destroy']);
-
     Route::get('/six-monthly-assessments', [SixMonthlyAssessmentController::class, 'index']);
     Route::post('/six-monthly-assessments', [SixMonthlyAssessmentController::class, 'store']);
     Route::get('/six-monthly-assessments/{id}', [SixMonthlyAssessmentController::class, 'show']);
     Route::put('/six-monthly-assessments/{id}', [SixMonthlyAssessmentController::class, 'update']);
     Route::delete('/six-monthly-assessments/{id}', [SixMonthlyAssessmentController::class, 'destroy']);
 
-    // Group Assessments routes
     Route::get('/group-assessments', [GroupAssessmentController::class, 'getGroupAssessments']);
     Route::get('/onboarding-columns', [GroupAssessmentController::class, 'getOnboardingColumns']);
 
+    // Scheme routes
     Route::get('/schemes', [SchemeController::class, 'index']);
     Route::get('/schemes/active', [SchemeController::class, 'activeSchemes']);
     Route::get('/schemes/{id}', [SchemeController::class, 'show']);
@@ -109,12 +101,20 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/schemes/{id}', [SchemeController::class, 'update']);
     Route::delete('/schemes/{id}', [SchemeController::class, 'destroy']);
 
+    // User onboarding data
     Route::get('/user/onboarding', [AdminOnboardingController::class, 'getUserOnboarding']);
+    
+    // Medication routes
+    Route::get('/medications', [MedicationController::class, 'index']);
+    Route::post('/medications', [MedicationController::class, 'store']);
+    Route::get('/medications/{id}', [MedicationController::class, 'show']);
+    Route::put('/medications/{id}', [MedicationController::class, 'update']);
+    Route::delete('/medications/{id}', [MedicationController::class, 'destroy']);
 
-    Route::get('/medication-uses', [MedicationUseController::class, 'index']);
-    Route::post('/medication-uses', [MedicationUseController::class, 'store']);
-    Route::get('/medication-uses/{medicationUse}', [MedicationUseController::class, 'show']);
-    Route::put('/medication-uses/{medicationUse}', [MedicationUseController::class, 'update']);
-    Route::delete('/medication-uses/{medicationUse}', [MedicationUseController::class, 'destroy']);
-    Route::apiResource('medications', MedicationController::class);
+    Route::get('/medications-uses', [MedicationUseController::class, 'getMedications']);
+    Route::get('/adminonboardings', [MedicationUseController::class, 'getOnboardings']);
+    Route::get('/onboardings/{onboardingId}/medication-uses', [MedicationUseController::class, 'index']);
+    Route::post('/onboardings/{onboardingId}/medication-uses', [MedicationUseController::class, 'store']);
+    Route::put('/medication-uses/{id}', [MedicationUseController::class, 'update']);
+    Route::delete('/medication-uses/{id}', [MedicationUseController::class, 'destroy']);
 });

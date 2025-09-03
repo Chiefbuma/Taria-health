@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -10,7 +9,6 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, HasApiTokens;
 
     const ROLE_ADMIN = 'admin';
@@ -18,7 +16,8 @@ class User extends Authenticatable
     const ROLE_NAVIGATOR = 'navigator';
     const ROLE_PAYER = 'payer';
     const ROLE_GUEST = 'guest';
-    
+    const ROLE_CLAIMS = 'claims';
+
     /**
      * The attributes that are mass assignable.
      *
@@ -30,7 +29,7 @@ class User extends Authenticatable
         'password',
         'role',
         'is_active',
-        'payer_id', // Added payer_id
+        'payer_id',
     ];
 
     /**
@@ -59,11 +58,59 @@ class User extends Authenticatable
     }
 
     /**
+     * Check if user has a specific role
+     */
+    public function hasRole(string $role): bool
+    {
+        return $this->role === $role;
+    }
+
+    /**
+     * Check if user has any of the given roles
+     */
+    public function hasAnyRole(array $roles): bool
+    {
+        return in_array($this->role, $roles);
+    }
+
+    /**
      * Check if user is admin
      */
     public function isAdmin(): bool
     {
-        return $this->role === self::ROLE_ADMIN;
+        return $this->hasRole(self::ROLE_ADMIN);
+    }
+
+    /**
+     * Check if user is navigator
+     */
+    public function isNavigator(): bool
+    {
+        return $this->hasRole(self::ROLE_NAVIGATOR);
+    }
+
+    /**
+     * Check if user is payer
+     */
+    public function isPayer(): bool
+    {
+        return $this->hasRole(self::ROLE_PAYER);
+    }
+
+    /**
+     * Check if user is guest
+     */
+    public function isGuest(): bool
+    {
+        return $this->hasRole(self::ROLE_GUEST);
+    }
+
+    /**
+     * Check if user is claims
+     */
+    public function isClaims(): bool
+    {
+        return $this->hasRole(self::ROLE_CLAIMS);
     }
 
     /**
@@ -72,6 +119,21 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return $this->is_active;
+    }
+
+    /**
+     * Get all available roles
+     */
+    public static function getAvailableRoles(): array
+    {
+        return [
+            self::ROLE_ADMIN,
+            self::ROLE_USER,
+            self::ROLE_NAVIGATOR,
+            self::ROLE_PAYER,
+            self::ROLE_GUEST,
+            self::ROLE_CLAIMS,
+        ];
     }
 
     /**

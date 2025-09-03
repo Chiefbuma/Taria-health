@@ -18,7 +18,7 @@ class AccountController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'phone' => 'required|string|max:20|unique:users',
             'password' => 'required|string|min:6|confirmed',
-            'role' => 'sometimes|in:admin,user,navigator,payer,guest',
+            'role' => 'sometimes|in:admin,user,navigator,payer,guest,claims',
         ]);
 
         if ($validator->fails()) {
@@ -154,7 +154,7 @@ class AccountController extends Controller
             $validator = Validator::make($request->all(), [
                 'email' => 'sometimes|string|email|max:255|unique:users,email,' . $id,
                 'phone' => 'sometimes|string|max:20|unique:users,phone,' . $id,
-                'role' => 'sometimes|in:admin,user,navigator,payer,guest',
+                'role' => 'sometimes|in:admin,user,navigator,payer,guest,claims',
                 'is_active' => 'sometimes|boolean',
                 'password' => 'sometimes|string|min:6|confirmed',
             ]);

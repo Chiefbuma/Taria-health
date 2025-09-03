@@ -2,23 +2,19 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Medication extends Model
 {
-    use HasFactory;
+    use SoftDeletes;
 
-    protected $table = 'medication';
-    protected $primaryKey = 'medication_id';
+    protected $table = 'medications';
+    protected $primaryKey = 'id';
+    protected $fillable = ['item_name', 'description', 'dosage', 'frequency', 'is_active'];
 
-    protected $fillable = [
-        'item_name',
-    ];
-
-    protected $dates = ['deleted_at'];
-    public $incrementing = true;
-    public $timestamps = true;
-
-    // Removed the patients() relationship since we're not using pivot table
+    public function medicationUses()
+    {
+        return $this->hasMany(MedicationUse::class, 'medication_id', 'id');
+    }
 }
