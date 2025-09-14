@@ -79,7 +79,6 @@ class OnboardingController extends Controller
             'mpesa_transaction_type' => 'nullable|string|max:255',
             'mpesa_status' => 'nullable|in:pending,completed,failed',
             'mpesa_confirmation_code' => 'nullable|string|max:255',
-            'insurance_provider' => 'nullable|string|max:255',
             'policy_number' => 'nullable|string|max:255',
             'insurance_id' => 'nullable|integer|exists:insurance,id',
         ]);
@@ -112,12 +111,12 @@ class OnboardingController extends Controller
                     'errors' => $mpesaValidator->errors(),
                 ], 422);
             }
-            $validated['insurance_provider'] = null;
+           
             $validated['policy_number'] = null;
             $validated['insurance_id'] = null;
         } elseif ($validated['payment_method'] === 'insurance') {
             $insuranceValidator = Validator::make($request->all(), [
-                'insurance_provider' => 'required|string|max:255',
+                
                 'policy_number' => 'required|string|max:255',
                 'insurance_id' => 'required|integer|exists:insurance,id',
             ]);
@@ -204,7 +203,7 @@ class OnboardingController extends Controller
                 'mpesa_transaction_type' => $validated['mpesa_transaction_type'] ?? null,
                 'mpesa_status' => $validated['mpesa_status'] ?? null,
                 'mpesa_confirmation_code' => $validated['mpesa_confirmation_code'] ?? null,
-                'insurance_provider' => $validated['insurance_provider'] ?? null,
+               
                 'policy_number' => $validated['policy_number'] ?? null,
                 'insurance_id' => $validated['insurance_id'] ?? null,
             ];

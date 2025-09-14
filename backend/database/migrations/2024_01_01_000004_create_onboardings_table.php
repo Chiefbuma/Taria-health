@@ -12,7 +12,7 @@ return new class extends Migration
         Schema::create('insurance', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->string('insurance_provider');
+            $table->foreignId('payer_id')->constrained('payers')->onDelete('cascade');
             $table->string('policy_number');
             $table->decimal('claim_amount', 10, 2)->nullable();
             $table->string('is_approved')->default('pending');
@@ -20,7 +20,9 @@ return new class extends Migration
             $table->string('approval_document_name')->nullable();
             $table->timestamps();
             $table->index('policy_number');
-            $table->index('insurance_provider');
+            $table->index('payer_id');
+            $table->index('user_id'); // Added index for frequent lookups
+            $table->index('is_approved'); // Added index for filtering by approval status
         });
 
         // Create onboardings table
@@ -32,7 +34,7 @@ return new class extends Migration
             $table->string('last_name');
             $table->date('date_of_birth');
             $table->string('emr_number')->nullable();
-            $table->foreignId('payer_id')->nullable()->constrained()->onDelete('set null');
+            $table->foreignId('payer_id')->nullable()->constrained('payers')->onDelete('set null');
             $table->foreignId('clinic_id')->nullable()->constrained('clinics', 'id')->onDelete('set null');
             $table->json('diagnoses')->nullable();
             $table->date('date_of_diagnosis')->nullable();
@@ -84,10 +86,17 @@ return new class extends Migration
             $table->string('payment_status')->nullable()->default('pending');
             $table->string('mpesa_number', 20)->nullable();
             $table->string('mpesa_reference')->nullable();
-            $table->string('insurance_provider')->nullable();
             $table->foreignId('insurance_id')->nullable()->constrained('insurance')->onDelete('set null');
             $table->timestamps();
             $table->softDeletes();
+            $table->index('first_name'); // Added index for searching by first name
+            $table->index('last_name'); // Added index for searching by last name
+            $table->index('date_of_birth'); // Added index for filtering by DOB
+            $table->index('emergency_contact_phone'); // Added index for searching by emergency contact
+            $table->index('payment_status'); // Added index for filtering by payment status
+            $table->index('clinic_id'); // Added index for clinic-based queries
+            $table->index('payer_id'); // Added index for payer-based queries
+            $table->index('is_active'); // Added index for filtering active/inactive records
         });
 
         // Create mpesa table (without onboarding_id initially)
@@ -104,16 +113,20 @@ return new class extends Migration
             $table->timestamps();
             $table->index('mpesa_reference');
             $table->index('phone_number');
+            $table->index('user_id'); // Added index for user-based queries
+            $table->index('status'); // Added index for filtering by transaction status
         });
 
         // Add onboarding_id column and foreign key to insurance table
         Schema::table('insurance', function (Blueprint $table) {
             $table->foreignId('onboarding_id')->nullable()->after('id')->constrained('onboardings')->onDelete('set null');
+            $table->index('onboarding_id'); // Added index for onboarding_id lookups
         });
 
         // Add onboarding_id column and foreign key to mpesa table
         Schema::table('mpesa', function (Blueprint $table) {
             $table->foreignId('onboarding_id')->nullable()->after('id')->constrained('onboardings')->onDelete('set null');
+            $table->index('onboarding_id'); // Added index for onboarding_id lookups
         });
     }
 
@@ -122,11 +135,13 @@ return new class extends Migration
         // Drop foreign keys and columns
         Schema::table('mpesa', function (Blueprint $table) {
             $table->dropForeign(['onboarding_id']);
+            $table->dropIndex(['onboarding_id']);
             $table->dropColumn('onboarding_id');
         });
 
         Schema::table('insurance', function (Blueprint $table) {
             $table->dropForeign(['onboarding_id']);
+            $table->dropIndex(['onboarding_id']);
             $table->dropColumn('onboarding_id');
         });
 

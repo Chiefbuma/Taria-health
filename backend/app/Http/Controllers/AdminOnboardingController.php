@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class AdminOnboardingController extends Controller
 {
@@ -186,190 +187,303 @@ class AdminOnboardingController extends Controller
     /**
      * Create a new onboarding (admin, navigator, payer, user, claims).
      */
-    public function store(Request $request)
+     public function store(Request $request)
     {
-        Log::info('Onboarding creation request received:', ['user_id' => $request->user()?->id, 'role' => $request->user()?->role, 'data' => $request->all()]);
+        $today = Carbon::today()->format('Y-m-d');
+
+        // Define validation rules for required fields only
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|integer|exists:users,id|unique:onboardings,user_id',
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'date_of_birth' => 'required|date|before_or_equal:' . $today,
+            'clinic_id' => 'required|integer|exists:clinics,id',
+            'age' => 'required|integer|min:0',
+            'sex' => 'required|string|in:male,female,other',
+            'date_of_onboarding' => 'required|date',
+            'emergency_contact_name' => 'required|string|max:255',
+            'emergency_contact_relation' => 'required|string|max:255',
+            
+            // Optional fields
+            'consent_date' => 'nullable|date',
+            'payment_method' => 'nullable|string|in:mpesa,insurance',
+            'payment_status' => 'nullable|string|in:pending,completed',
+            'middle_name' => 'nullable|string|max:255',
+            'emr_number' => 'nullable|string|max:255',
+            'payer_id' => 'nullable|integer|exists:payers,id',
+            'diagnoses' => 'nullable|array',
+            'diagnoses.*' => 'string|max:255',
+            'date_of_diagnosis' => 'nullable|date',
+            'medications' => 'nullable|json',
+            'emergency_contact_phone' => 'nullable|string|max:20',
+            'brief_medical_history' => 'nullable|string',
+            'years_since_diagnosis' => 'nullable|integer|min:0',
+            'past_medical_interventions' => 'nullable|string',
+            'relevant_family_history' => 'nullable|string',
+            'hba1c_baseline' => 'nullable|numeric|min:0',
+            'ldl_baseline' => 'nullable|numeric|min:0',
+            'bp_baseline' => 'nullable|string|max:255',
+            'weight_baseline' => 'nullable|numeric|min:0',
+            'height' => 'nullable|numeric|min:0',
+            'bmi_baseline' => 'nullable|numeric|min:0',
+            'serum_creatinine_baseline' => 'nullable|numeric|min:0',
+            'ecg_baseline' => 'nullable|string|max:255',
+            'physical_activity_level' => 'nullable|string|max:255',
+            'weight_loss_target' => 'nullable|numeric|min:0',
+            'hba1c_target' => 'nullable|numeric|min:0',
+            'bp_target' => 'nullable|string|max:255',
+            'activity_goal' => 'nullable|string|max:255',
+            'has_weighing_scale' => 'nullable|boolean',
+            'has_glucometer' => 'nullable|boolean',
+            'has_bp_machine' => 'nullable|boolean',
+            'has_tape_measure' => 'nullable|boolean',
+            'dietary_restrictions' => 'nullable|string',
+            'allergies_intolerances' => 'nullable|string',
+            'lifestyle_factors' => 'nullable|string',
+            'physical_limitations' => 'nullable|string',
+            'psychosocial_factors' => 'nullable|string',
+            'initial_consultation_date' => 'nullable|date',
+            'follow_up_review1' => 'nullable|date',
+            'follow_up_review2' => 'nullable|date',
+            'additional_review' => 'nullable|date',
+            'consent_to_telehealth' => 'nullable|boolean',
+            'consent_to_risks' => 'nullable|boolean',
+            'consent_to_data_use' => 'nullable|boolean',
+            'activation_code' => 'nullable|string|max:255',
+            'is_active' => 'nullable|boolean',
+            'phone_number' => 'nullable|string|regex:/^0[0-9]{9}$/|size:10',
+            'mpesa_reference' => 'nullable|string|max:255',
+            'mpesa_client_name' => 'nullable|string|max:255',
+            'mpesa_amount' => 'nullable|numeric|min:0',
+            'mpesa_transaction_type' => 'nullable|string|max:255',
+            'mpesa_status' => 'nullable|string|in:pending,completed,failed',
+            'mpesa_confirmation_code' => 'nullable|string|max:255',
+            'policy_number' => 'nullable|string|max:255',
+            'insurance_record_id' => 'nullable|integer|exists:insurance,id',
+            'payment_id' => 'nullable|integer',
+        ]);
+
+        // Custom validation for consents
+        $validator->after(function ($validator) use ($request) {
+            if (!$request->boolean('consent_to_telehealth') &&
+                !$request->boolean('consent_to_risks') &&
+                !$request->boolean('consent_to_data_use')) {
+                $validator->errors()->add('consents', 'At least one consent option (telehealth, risks, or data use) must be selected.');
+            }
+        });
+
+        // Conditional validation for payment method
+        if ($request->input('payment_method') === 'mpesa') {
+            $mpesaValidator = Validator::make($request->all(), [
+                'phone_number' => 'required|string|regex:/^0[0-9]{9}$/|size:10',
+                'mpesa_reference' => 'required|string|max:255',
+                'mpesa_client_name' => 'required|string|max:255',
+                'mpesa_amount' => 'required|numeric|min:0',
+                'mpesa_transaction_type' => 'required|string|max:255',
+            ]);
+            if ($mpesaValidator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'M-Pesa validation failed',
+                    'errors' => $mpesaValidator->errors(),
+                ], 422);
+            }
+        } elseif ($request->input('payment_method') === 'insurance') {
+            $insuranceValidator = Validator::make($request->all(), [
+                'payer_id' => 'required|integer|exists:payers,id',
+                'policy_number' => 'required|string|max:255',
+                'insurance_record_id' => 'required|integer|exists:insurance,id',
+            ]);
+            if ($insuranceValidator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Insurance validation failed',
+                    'errors' => $insuranceValidator->errors(),
+                ], 422);
+            }
+        }
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $validated = $validator->validated();
+
+        // Clear fields based on payment method
+        if ($validated['payment_method'] === 'mpesa') {
+            $validated['policy_number'] = null;
+            $validated['insurance_record_id'] = null;
+        } elseif ($validated['payment_method'] === 'insurance') {
+            $validated['phone_number'] = null;
+            $validated['mpesa_reference'] = null;
+            $validated['mpesa_client_name'] = null;
+            $validated['mpesa_amount'] = null;
+            $validated['mpesa_transaction_type'] = null;
+            $validated['mpesa_status'] = null;
+            $validated['mpesa_confirmation_code'] = null;
+        }
+
+        DB::beginTransaction();
 
         try {
-            $user = $request->user();
-            Log::debug('store debug:', [
-                'user_exists' => !empty($user),
-                'user_id' => $user?->id,
-                'role' => $user?->role,
-                'is_active' => $user?->isActive(),
-            ]);
-            if (!$user) {
-                Log::warning('No authenticated user found for onboarding creation');
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
-            }
-            if (!$user->isActive()) {
-                Log::warning('Inactive user attempted to create onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
-            }
-            $allowedRoles = [
-                User::ROLE_ADMIN,
-                User::ROLE_NAVIGATOR,
-                User::ROLE_PAYER,
-                User::ROLE_USER,
-                User::ROLE_CLAIMS
+            // Prepare onboarding data
+            $onboardingData = [
+                'user_id' => $validated['user_id'],
+                'first_name' => $validated['first_name'],
+                'middle_name' => $validated['middle_name'] ?? null,
+                'last_name' => $validated['last_name'],
+                'date_of_birth' => $validated['date_of_birth'],
+                'emr_number' => $validated['emr_number'] ?? null,
+                'payer_id' => $validated['payer_id'] ?? null,
+                'clinic_id' => $validated['clinic_id'],
+                'diagnoses' => $validated['diagnoses'] ? json_encode($validated['diagnoses']) : null,
+                'date_of_diagnosis' => $validated['date_of_diagnosis'] ?? null,
+                'medications' => $validated['medications'] ?? null,
+                'age' => $validated['age'],
+                'sex' => $validated['sex'],
+                'date_of_onboarding' => $validated['date_of_onboarding'],
+                'emergency_contact_name' => $validated['emergency_contact_name'],
+                'emergency_contact_phone' => $validated['emergency_contact_phone'] ?? null,
+                'emergency_contact_relation' => $validated['emergency_contact_relation'],
+                'brief_medical_history' => $validated['brief_medical_history'] ?? null,
+                'years_since_diagnosis' => $validated['years_since_diagnosis'] ?? null,
+                'past_medical_interventions' => $validated['past_medical_interventions'] ?? null,
+                'relevant_family_history' => $validated['relevant_family_history'] ?? null,
+                'hba1c_baseline' => $validated['hba1c_baseline'] ?? null,
+                'ldl_baseline' => $validated['ldl_baseline'] ?? null,
+                'bp_baseline' => $validated['bp_baseline'] ?? null,
+                'weight_baseline' => $validated['weight_baseline'] ?? null,
+                'height' => $validated['height'] ?? null,
+                'bmi_baseline' => $validated['bmi_baseline'] ?? null,
+                'serum_creatinine_baseline' => $validated['serum_creatinine_baseline'] ?? null,
+                'ecg_baseline' => $validated['ecg_baseline'] ?? null,
+                'physical_activity_level' => $validated['physical_activity_level'] ?? null,
+                'weight_loss_target' => $validated['weight_loss_target'] ?? null,
+                'hba1c_target' => $validated['hba1c_target'] ?? null,
+                'bp_target' => $validated['bp_target'] ?? null,
+                'activity_goal' => $validated['activity_goal'] ?? null,
+                'has_weighing_scale' => $validated['has_weighing_scale'] ?? false,
+                'has_glucometer' => $validated['has_glucometer'] ?? false,
+                'has_bp_machine' => $validated['has_bp_machine'] ?? false,
+                'has_tape_measure' => $validated['has_tape_measure'] ?? false,
+                'dietary_restrictions' => $validated['dietary_restrictions'] ?? null,
+                'allergies_intolerances' => $validated['allergies_intolerances'] ?? null,
+                'lifestyle_factors' => $validated['lifestyle_factors'] ?? null,
+                'physical_limitations' => $validated['physical_limitations'] ?? null,
+                'psychosocial_factors' => $validated['psychosocial_factors'] ?? null,
+                'initial_consultation_date' => $validated['initial_consultation_date'] ?? null,
+                'follow_up_review1' => $validated['follow_up_review1'] ?? null,
+                'follow_up_review2' => $validated['follow_up_review2'] ?? null,
+                'additional_review' => $validated['additional_review'] ?? null,
+                'consent_date' => $validated['consent_date'],
+                'activation_code' => $validated['activation_code'] ?? null,
+                'is_active' => $validated['is_active'] ?? true,
+                'consent_to_telehealth' => $validated['consent_to_telehealth'] ?? false,
+                'consent_to_risks' => $validated['consent_to_risks'] ?? false,
+                'consent_to_data_use' => $validated['consent_to_data_use'] ?? false,
+                'payment_method' => $validated['payment_method'],
+                'payment_status' => $validated['payment_status'],
+                'insurance_id' => $validated['insurance_record_id'] ?? null,
+                'payment_id' => $validated['payment_id'] ?? null,
             ];
-            if (!in_array($user->role, $allowedRoles)) {
-                Log::warning('Unauthorized role for creating onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
-            }
 
-            if ($user->role === User::ROLE_PAYER && !$user->payer_id) {
-                Log::warning('Payer has no payer_id:', ['user_id' => $user->id]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payer ID not set for this user'
-                ], 403);
-            }
+            // Create onboarding record
+            $onboarding = Onboarding::create($onboardingData);
 
-            // Verify payment
-            $paymentVerified = false;
-            $paymentMethod = $request->payment_method;
-            $paymentId = $request->payment_id;
-
-            if ($paymentMethod === 'mpesa') {
-                $payment = Mpesa::where('id', $paymentId)
-                    ->where('status', 'completed')
-                    ->first();
-                if (!$payment) {
-                    Log::warning('M-Pesa payment verification failed:', ['user_id' => $user->id, 'payment_id' => $paymentId]);
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'M-Pesa payment not completed or not found'
-                    ], 400);
-                }
-                $paymentVerified = true;
-            } elseif ($paymentMethod === 'insurance') {
-                $payment = Insurance::where('id', $paymentId)->first();
-                if (!$payment) {
-                    Log::warning('Insurance record verification failed:', ['user_id' => $user->id, 'payment_id' => $paymentId]);
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Insurance record not found'
-                    ], 400);
-                }
-                $paymentVerified = true;
-            }
-
-            if (!$paymentVerified) {
-                Log::warning('Payment verification failed:', ['user_id' => $user->id, 'payment_method' => $paymentMethod, 'payment_id' => $paymentId]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payment verification failed'
-                ], 400);
-            }
-
-            // Create onboarding and update payment record in a transaction
-            $onboarding = DB::transaction(function () use ($request, $paymentMethod, $paymentId, $user) {
-                $onboarding = Onboarding::create([
-                    'user_id' => $user->role === User::ROLE_USER ? $user->id : $request->user_id,
-                    'first_name' => $request->first_name,
-                    'middle_name' => $request->middle_name,
-                    'last_name' => $request->last_name,
-                    'date_of_birth' => $request->date_of_birth,
-                    'emr_number' => $request->emr_number,
-                    'payer_id' => $request->payer_id,
-                    'clinic_id' => $request->clinic_id,
-                    'diagnoses' => $request->diagnoses,
-                    'age' => $request->age,
-                    'sex' => $request->sex,
-                    'date_of_onboarding' => now()->toDateString(),
-                    'emergency_contact_name' => $request->emergency_contact_name,
-                    'emergency_contact_phone' => $request->emergency_contact_phone,
-                    'emergency_contact_relation' => $request->emergency_contact_relation,
-                    'weight_loss_target' => $request->weight_loss_target,
-                    'hba1c_target' => $request->hba1c_target,
-                    'bp_target' => $request->bp_target,
-                    'activity_goal' => $request->activity_goal,
-                    'hba1c_baseline' => $request->hba1c_baseline,
-                    'ldl_baseline' => $request->ldl_baseline,
-                    'bp_baseline' => $request->bp_baseline,
-                    'weight_baseline' => $request->weight_baseline,
-                    'height' => $request->height,
-                    'bmi_baseline' => $request->bmi_baseline,
-                    'serum_creatinine_baseline' => $request->serum_creatinine_baseline,
-                    'ecg_baseline' => $request->ecg_baseline,
-                    'physical_activity_level' => $request->physical_activity_level,
-                    'brief_medical_history' => $request->brief_medical_history,
-                    'date_of_diagnosis' => $request->date_of_diagnosis,
-                    'past_medical_interventions' => $request->past_medical_interventions,
-                    'relevant_family_history' => $request->relevant_family_history,
-                    'has_weighing_scale' => $request->has_weighing_scale,
-                    'has_glucometer' => $request->has_glucometer,
-                    'has_bp_machine' => $request->has_bp_machine,
-                    'has_tape_measure' => $request->has_tape_measure,
-                    'dietary_restrictions' => $request->dietary_restrictions,
-                    'allergies_intolerances' => $request->allergies_intolerances,
-                    'lifestyle_factors' => $request->lifestyle_factors,
-                    'physical_limitations' => $request->physical_limitations,
-                    'psychosocial_factors' => $request->psychosocial_factors,
-                    'initial_consultation_date' => $request->initial_consultation_date,
-                    'follow_up_review1' => $request->follow_up_review1,
-                    'follow_up_review2' => $request->follow_up_review2,
-                    'additional_review' => $request->additional_review,
-                    'consent_date' => $request->consent_date,
-                    'consent_to_telehealth' => $request->consent_to_telehealth,
-                    'consent_to_risks' => $request->consent_to_risks,
-                    'consent_to_data_use' => $request->consent_to_data_use,
-                    'payment_method' => $paymentMethod,
-                    'payment_id' => $paymentId,
-                    'payment_status' => $request->payment_status ?? 'pending',
-                    'mpesa_number' => $request->mpesa_number,
-                    'mpesa_reference' => $request->mpesa_reference,
-                    'insurance_provider' => $request->insurance_provider,
-                    'insurance_id' => $request->insurance_id,
-                    'policy_number' => $request->policy_number,
-                    'activation_code' => $request->activation_code,
-                    'is_active' => $request->is_active ?? true,
-                    'hba1c_latest_reading_date' => $request->hba1c_latest_reading_date,
-                    'ldl_latest_reading_date' => $request->ldl_latest_reading_date,
-                    'bp_latest_reading_date' => $request->bp_latest_reading_date,
-                    'weight_latest_reading_date' => $request->weight_latest_reading_date,
-                    'serum_creatinine_latest_reading_date' => $request->serum_creatinine_latest_reading_date,
-                    'ecg_latest_reading_date' => $request->ecg_latest_reading_date,
+            // Create M-Pesa record if payment_method is mpesa
+            if ($validated['payment_method'] === 'mpesa') {
+                $mpesa = Mpesa::create([
+                    'user_id' => $validated['user_id'],
+                    'onboarding_id' => $onboarding->id,
+                    'phone_number' => $validated['phone_number'],
+                    'mpesa_reference' => $validated['mpesa_reference'],
+                    'client_name' => $validated['mpesa_client_name'],
+                    'amount' => $validated['mpesa_amount'],
+                    'transaction_type' => $validated['mpesa_transaction_type'],
+                    'status' => $validated['mpesa_status'] ?? 'pending',
+                    'confirmation_code' => $validated['mpesa_confirmation_code'] ?? null,
                 ]);
+                $onboarding->update(['payment_id' => $mpesa->id]);
+            } elseif ($validated['payment_method'] === 'insurance') {
+                // Update insurance record with onboarding_id
+                Insurance::where('id', $validated['insurance_record_id'])
+                    ->update(['onboarding_id' => $onboarding->id]);
+                $onboarding->update(['payment_id' => $validated['insurance_record_id']]);
+            }
 
-                // Update payment record with onboarding_id
-                if ($paymentMethod === 'mpesa') {
-                    Mpesa::where('id', $paymentId)
-                        ->update(['onboarding_id' => $onboarding->id]);
-                } elseif ($paymentMethod === 'insurance') {
-                    Insurance::where('id', $paymentId)
-                        ->update(['onboarding_id' => $onboarding->id]);
-                }
+            DB::commit();
 
-                return $onboarding;
-            });
+            Log::info('Onboarding created successfully:', [
+                'onboarding_id' => $onboarding->id,
+                'user_id' => $validated['user_id'],
+            ]);
 
-            Log::info('Onboarding created successfully:', ['onboarding_id' => $onboarding->id, 'user_id' => $user->id, 'role' => $user->role]);
             return response()->json([
-                'success' => true,
+                'status' => 'success',
                 'message' => 'Onboarding created successfully',
-                'data' => [
-                    'onboarding' => $onboarding,
-                    'payment_method' => $paymentMethod,
-                    'payment_id' => $paymentId
-                ]
+                'data' => $onboarding->load('mpesa'),
             ], 201);
-        } catch (\Exception $e) {
-            Log::error('Onboarding creation error:', ['user_id' => $user?->id, 'role' => $user?->role, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            DB::rollBack();
+            Log::error('Onboarding creation failed: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'sql' => $e->getSql(),
+                'bindings' => $e->getBindings(),
+            ]);
+
+            if ($e->getCode() === '23000') {
+                if (str_contains($e->getMessage(), 'onboardings_user_id_unique')) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Onboarding record already exists for this user',
+                    ], 422);
+                }
+                if (str_contains($e->getMessage(), 'onboardings_clinic_id_foreign')) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Invalid clinic ID: Clinic does not exist',
+                    ], 422);
+                }
+                if (str_contains($e->getMessage(), 'onboardings_payer_id_foreign')) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Invalid payer ID: Payer does not exist',
+                    ], 422);
+                }
+                if (str_contains($e->getMessage(), 'onboardings_insurance_id_foreign')) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Invalid insurance ID: Insurance record does not exist',
+                    ], 422);
+                }
+                if (str_contains($e->getMessage(), 'cannot be null')) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Required field cannot be null',
+                        'error' => $e->getMessage(),
+                    ], 422);
+                }
+            }
+
             return response()->json([
-                'success' => false,
-                'message' => 'Failed to create onboarding',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+                'status' => 'error',
+                'message' => 'An error occurred during onboarding',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Database error',
+            ], 500);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Onboarding creation failed: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'An unexpected error occurred',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Server error',
             ], 500);
         }
     }

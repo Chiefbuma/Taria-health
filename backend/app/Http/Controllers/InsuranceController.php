@@ -83,7 +83,7 @@ class InsuranceController extends Controller
                 ], 403);
             }
 
-            $query = Insurance::query()->with('onboarding');
+            $query = Insurance::query()->with(['onboarding', 'payer']);
 
             // Restrict payers to only see insurance records associated with their payer_id
             if ($user->role === User::ROLE_PAYER) {
@@ -94,16 +94,13 @@ class InsuranceController extends Controller
                         'message' => 'Payer ID not set for this user'
                     ], 403);
                 }
-                $query->whereHas('onboarding', function ($q) use ($user) {
-                    $q->where('payer_id', $user->payer_id);
-                }, '>=', 0); // Allow records with no onboarding
+                $query->where('payer_id', $user->payer_id);
             }
             // Restrict users to only see their own insurance records
             elseif ($user->role === User::ROLE_USER) {
                 $query->where('user_id', $user->id);
             }
-            // Admins and Claims roles see all insurance records, no additional filtering
-            // Navigator role also sees all records, as per existing logic
+            // Admins, Navigator, and Claims roles see all insurance records, no additional filtering
 
             $insurances = $query->get();
             Log::info('Insurance records retrieved successfully:', [
@@ -139,31 +136,52 @@ class InsuranceController extends Controller
     public function show($id)
     {
         try {
-            $insurance = Insurance::with('onboarding')->findOrFail($id);
+            $insurance = Insurance::with(['onboarding', 'payer'])->findOrFail($id);
+
+            // Check user access
+            $user = request()->user();
+            if (!$this->hasAccess(request()) || ($user->role === User::ROLE_USER && $insurance->user_id !== $user->id) || ($user->role === User::ROLE_PAYER && $insurance->payer_id !== $user->payer_id)) {
+                Log::warning('Unauthorized access to insurance record:', [
+                    'user_id' => $user?->id,
+                    'insurance_id' => $id,
+                    'role' => $user?->role
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => $insurance,
             ], 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::warning('Insurance record not found:', ['id' => $id]);
             return response()->json(['success' => false, 'message' => 'Insurance record not found'], 404);
         } catch (\Exception $e) {
-            Log::error('Error fetching insurance record', [
+            Log::error('Error fetching insurance record:', [
                 'id' => $id,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
-            return response()->json(['success' => false, 'message' => 'Failed to fetch insurance record'], 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch insurance record',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
         }
     }
 
     /**
-     * Store a new insurance record.
+     * Store a new insurance record and update user's payer_id.
      */
     public function store(Request $request)
     {
         try {
             $validator = Validator::make($request->all(), [
                 'user_id' => 'required|exists:users,id',
-                'insurance_provider' => 'required|string|max:255',
+                'payer_id' => 'required|exists:payers,id',
                 'policy_number' => 'required|string|max:255|unique:insurance,policy_number',
                 'claim_amount' => 'nullable|numeric|min:0',
                 'is_approved' => 'nullable|in:pending,approved,rejected',
@@ -175,9 +193,23 @@ class InsuranceController extends Controller
                 return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
             }
 
+            // Check user access
+            $user = $request->user();
+            if (!$this->hasAccess($request) || ($user->role === User::ROLE_USER && $request->user_id != $user->id)) {
+                Log::warning('Unauthorized attempt to create insurance record:', [
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'request_data' => $request->all()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
             $data = $request->only([
                 'user_id',
-                'insurance_provider',
+                'payer_id',
                 'policy_number',
                 'claim_amount',
                 'is_approved',
@@ -192,37 +224,63 @@ class InsuranceController extends Controller
 
             $data['is_approved'] = $data['is_approved'] ?? 'pending';
 
+            // Create the insurance record
             $insurance = Insurance::create($data);
+
+            // Update the user's payer_id in the users table
+            $targetUser = User::findOrFail($data['user_id']);
+            $targetUser->update(['payer_id' => $data['payer_id']]);
+
+            Log::info('Insurance record created and user payer_id updated successfully:', [
+                'insurance_id' => $insurance->id,
+                'user_id' => $user->id,
+                'target_user_id' => $targetUser->id,
+                'payer_id' => $data['payer_id'],
+                'role' => $user->role
+            ]);
 
             return response()->json([
                 'success' => true,
-                'data' => $insurance,
-                'message' => 'Insurance record created successfully',
+                'data' => $insurance->fresh(['onboarding', 'payer']),
+                'message' => 'Insurance record created and user payer updated successfully',
             ], 201);
         } catch (QueryException $e) {
-            Log::error('Error creating insurance record', [
+            Log::error('Error creating insurance record or updating user payer_id:', [
                 'error' => $e->getMessage(),
                 'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString()
             ]);
             if ($e->getCode() === '23000' && str_contains($e->getMessage(), 'insurance_policy_number_unique')) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Policy number already exists',
+                    'errors' => ['policy_number' => 'The policy number has already been taken']
                 ], 422);
             }
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create insurance record',
-                'error' => $e->getMessage(),
+                'message' => 'Failed to create insurance record or update user payer',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
-        } catch (\Exception $e) {
-            Log::error('Error creating insurance record', [
-                'error' => $e->getMessage(),
-                'request_data' => $request->all(),
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::warning('User not found for payer_id update:', [
+                'user_id' => $request->user_id,
+                'error' => $e->getMessage()
             ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create insurance record',
+                'message' => 'User not found for payer update'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Error creating insurance record or updating user payer_id:', [
+                'error' => $e->getMessage(),
+                'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create insurance record or update user payer',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }
     }
@@ -234,9 +292,27 @@ class InsuranceController extends Controller
     {
         try {
             $insurance = Insurance::findOrFail($id);
+
+            // Check user access
+            $user = $request->user();
+            if (!$this->hasAccess($request) || 
+                ($user->role === User::ROLE_USER && $insurance->user_id !== $user->id) || 
+                ($user->role === User::ROLE_PAYER && $insurance->payer_id !== $user->payer_id)) {
+                Log::warning('Unauthorized attempt to update insurance record:', [
+                    'user_id' => $user->id,
+                    'insurance_id' => $id,
+                    'role' => $user->role
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
             $validator = Validator::make($request->all(), [
-                'insurance_provider' => 'nullable|string|max:255',
-                'policy_number' => 'nullable|string|max:255|unique:insurance,policy_number,' . $id,
+                'user_id' => 'sometimes|exists:users,id',
+                'payer_id' => 'sometimes|exists:payers,id',
+                'policy_number' => 'sometimes|string|max:255|unique:insurance,policy_number,' . $id,
                 'claim_amount' => 'nullable|numeric|min:0',
                 'is_approved' => 'nullable|in:pending,approved,rejected',
                 'payment_date' => 'nullable|date',
@@ -248,7 +324,8 @@ class InsuranceController extends Controller
             }
 
             $data = $request->only([
-                'insurance_provider',
+                'user_id',
+                'payer_id',
                 'policy_number',
                 'claim_amount',
                 'is_approved',
@@ -256,6 +333,7 @@ class InsuranceController extends Controller
             ]);
 
             if ($request->hasFile('approval_document')) {
+                // Delete old document if it exists
                 if ($insurance->approval_document_path) {
                     Storage::disk('public')->delete($insurance->approval_document_path);
                 }
@@ -265,90 +343,109 @@ class InsuranceController extends Controller
             }
 
             $insurance->update($data);
+
+            Log::info('Insurance record updated successfully:', [
+                'insurance_id' => $insurance->id,
+                'user_id' => $user->id,
+                'role' => $user->role
+            ]);
+
             return response()->json([
                 'success' => true,
-                'data' => $insurance,
+                'data' => $insurance->fresh(['onboarding', 'payer']),
                 'message' => 'Insurance record updated successfully',
             ], 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::warning('Insurance record not found for update:', ['id' => $id]);
             return response()->json(['success' => false, 'message' => 'Insurance record not found'], 404);
-        } catch (\Exception $e) {
-            Log::error('Error updating insurance record', [
-                'id' => $id,
+        } catch (QueryException $e) {
+            Log::error('Error updating insurance record:', [
+                'insurance_id' => $id,
                 'error' => $e->getMessage(),
+                'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            if ($e->getCode() === '23000' && str_contains($e->getMessage(), 'insurance_policy_number_unique')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Policy number already exists',
+                    'errors' => ['policy_number' => 'The policy number has already been taken']
+                ], 422);
+            }
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update insurance record',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        } catch (\Exception $e) {
+            Log::error('Error updating insurance record:', [
+                'insurance_id' => $id,
+                'error' => $e->getMessage(),
+                'request_data' => $request->all(),
+                'trace' => $e->getTraceAsString()
             ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update insurance record',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }
     }
 
     /**
-     * Delete an entire insurance record.
+     * Delete an insurance record.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         try {
             $insurance = Insurance::findOrFail($id);
-            if (!$this->hasAccess(request())) {
-                return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+
+            // Check user access
+            $user = $request->user();
+            if (!$this->hasAccess($request) || 
+                ($user->role === User::ROLE_USER && $insurance->user_id !== $user->id) || 
+                ($user->role === User::ROLE_PAYER && $insurance->payer_id !== $user->payer_id)) {
+                Log::warning('Unauthorized attempt to delete insurance record:', [
+                    'user_id' => $user->id,
+                    'insurance_id' => $id,
+                    'role' => $user->role
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
             }
 
+            // Delete associated document if it exists
             if ($insurance->approval_document_path) {
                 Storage::disk('public')->delete($insurance->approval_document_path);
             }
 
             $insurance->delete();
+
+            Log::info('Insurance record deleted successfully:', [
+                'insurance_id' => $id,
+                'user_id' => $user->id,
+                'role' => $user->role
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Insurance record deleted successfully',
             ], 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::warning('Insurance record not found for deletion:', ['id' => $id]);
             return response()->json(['success' => false, 'message' => 'Insurance record not found'], 404);
         } catch (\Exception $e) {
-            Log::error('Error deleting insurance record', [
-                'id' => $id,
+            Log::error('Error deleting insurance record:', [
+                'insurance_id' => $id,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete insurance record',
-            ], 500);
-        }
-    }
-
-    /**
-     * Delete an insurance approval document.
-     */
-    public function deleteDocument($id)
-    {
-        try {
-            $insurance = Insurance::findOrFail($id);
-            if (!$insurance->approval_document_path) {
-                return response()->json(['success' => false, 'message' => 'No document found'], 404);
-            }
-
-            Storage::disk('public')->delete($insurance->approval_document_path);
-            $insurance->update([
-                'approval_document_path' => null,
-                'approval_document_name' => null,
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Document deleted successfully',
-            ], 200);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json(['success' => false, 'message' => 'Insurance record not found'], 404);
-        } catch (\Exception $e) {
-            Log::error('Error deleting document', [
-                'id' => $id,
-                'error' => $e->getMessage(),
-            ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete document',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }
     }

@@ -13,6 +13,7 @@ class CreateSchemesTable extends Migration
             $table->string('name', 255);
             $table->softDeletes();
             $table->timestamps();
+            $table->index('name'); // Added index for searching by scheme name
         });
     }
 

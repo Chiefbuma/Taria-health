@@ -14,7 +14,7 @@ class Insurance extends Model
     protected $fillable = [
         'user_id',
         'onboarding_id',
-        'insurance_provider',
+        'payer_id',
         'policy_number',
         'claim_amount',
         'is_approved',
@@ -30,5 +30,10 @@ class Insurance extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function payer()
+    {
+        return $this->belongsTo(Payer::class);
     }
 }

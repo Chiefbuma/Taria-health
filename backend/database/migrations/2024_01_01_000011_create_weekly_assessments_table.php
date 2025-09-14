@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('bp')->nullable();
             $table->float('height')->nullable();
             $table->float('weight')->nullable();
-             $table->string('ecg')->nullable();
+            $table->string('ecg')->nullable();
             $table->float('bmi')->nullable();
             $table->float('serum_creatinine')->nullable();
             $table->string('physical_activity_level')->nullable();
@@ -27,8 +27,13 @@ return new class extends Migration
             $table->string('medication_adherence')->nullable();
             $table->date('assessment_date');
             $table->float('revenue');
-           
             $table->timestamps();
+            $table->index('assessment_date'); // Added index for filtering by date
+            $table->index('hba1c'); // Added index for filtering by HbA1c
+            $table->index('ldl'); // Added index for filtering by LDL
+            $table->index('bmi'); // Added index for filtering by BMI
+            $table->index('medication_adherence'); // Added index for filtering by adherence
+            $table->index('revenue'); // Added index for financial queries
         });
     }
 

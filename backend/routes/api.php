@@ -69,7 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('adminonboardings')->group(function () {
         Route::get('/', [AdminOnboardingController::class, 'index'])->name('adminonboardings.index');
         Route::get('/{id}', [AdminOnboardingController::class, 'show'])->name('adminonboardings.show');
-        Route::post('/', [AdminOnboardingController::class, 'store'])->name('adminonboardings.store');
+        Route::post('/payer/adminboarding', [AdminOnboardingController::class, 'store'])->name('adminonboardings.store');
         Route::put('/{id}', [AdminOnboardingController::class, 'update'])->name('adminonboardings.update');
         Route::delete('/{id}', [AdminOnboardingController::class, 'destroy'])->name('adminonboardings.delete');
         Route::post('/{id}/complete', [AdminOnboardingController::class, 'complete'])->name('adminonboardings.complete');

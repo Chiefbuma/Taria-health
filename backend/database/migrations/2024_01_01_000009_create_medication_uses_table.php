@@ -1,4 +1,3 @@
-```php
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -12,13 +11,14 @@ return new class extends Migration
         // Create medications table
         Schema::create('medications', function (Blueprint $table) {
             $table->id('id');
-            $table->string('item_name')->unique();
+            $table->string('item_name')->unique(); // Unique constraint includes index
             $table->text('description')->nullable();
             $table->string('dosage')->nullable();
             $table->string('frequency')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();
+            $table->index('is_active'); // Added index for filtering by active status
         });
 
         // Create medication_uses table
@@ -30,6 +30,8 @@ return new class extends Migration
             $table->enum('frequency', ['daily', 'twice_daily', 'weekly', 'as_needed'])->default('daily')->nullable();
             $table->integer('no_pills_dispensed')->nullable();
             $table->timestamps();
+            $table->index('onboarding_id'); // Added index for onboarding-based queries
+            $table->index('frequency'); // Added index for filtering by frequency
         });
     }
 
