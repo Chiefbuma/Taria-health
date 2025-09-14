@@ -21,8 +21,8 @@ class Onboarding extends Model
         'emr_number',
         'payer_id',
         'clinic_id',
-        'insurance_id',
         'diagnoses',
+        'date_of_diagnosis',
         'medications',
         'age',
         'sex',
@@ -31,7 +31,7 @@ class Onboarding extends Model
         'emergency_contact_phone',
         'emergency_contact_relation',
         'brief_medical_history',
-        'date_of_diagnosis',
+        'years_since_diagnosis',
         'past_medical_interventions',
         'relevant_family_history',
         'hba1c_baseline',
@@ -67,24 +67,22 @@ class Onboarding extends Model
         'consent_to_risks',
         'consent_to_data_use',
         'payment_method',
-        'payment_id',
         'payment_status',
-        'mpesa_number',
-        'mpesa_reference',
-        'insurance_provider',
+        'insurance_id',
+        'mpesa_id',
     ];
 
     protected $casts = [
         'diagnoses' => 'array',
         'medications' => 'array',
-        'is_active' => 'boolean',
+        'consent_to_telehealth' => 'boolean',
+        'consent_to_risks' => 'boolean',
+        'consent_to_data_use' => 'boolean',
         'has_weighing_scale' => 'boolean',
         'has_glucometer' => 'boolean',
         'has_bp_machine' => 'boolean',
         'has_tape_measure' => 'boolean',
-        'consent_to_telehealth' => 'boolean',
-        'consent_to_risks' => 'boolean',
-        'consent_to_data_use' => 'boolean',
+        'is_active' => 'boolean',
     ];
 
     public function user()
@@ -92,40 +90,28 @@ class Onboarding extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function payer()
-    {
-        return $this->belongsTo(Payer::class);
-    }
-
     public function clinic()
     {
         return $this->belongsTo(Clinic::class);
     }
 
-    public function insurance()
+    public function payer()
     {
-        return $this->belongsTo(Insurance::class);
+        return $this->belongsTo(Payer::class);
     }
 
-    public function medicationUses()
+     public function insurance()
+    {
+        return $this->belongsTo(Insurance::class, 'insurance_id', 'id');
+    }
+
+    public function mpesa()
+    {
+        return $this->hasOne(Mpesa::class, 'onboarding_id');
+    }
+        public function medicationUses()
     {
         return $this->hasMany(MedicationUse::class, 'onboarding_id');
     }
 
-    public function mpesaPayment()
-    {
-        return $this->hasOne(MpesaPayment::class);
-    }
-
-    public function medications()
-    {
-        return $this->hasManyThrough(
-            Medication::class,
-            MedicationUse::class,
-            'onboarding_id',
-            'medication_id',
-            'id',
-            'medication_id'
-        );
-    }
 }

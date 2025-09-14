@@ -4,50 +4,57 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\Onboarding;
-use App\Models\MpesaPayment;
+use App\Models\Mpesa;
 use App\Models\Insurance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class AdminOnboardingController extends Controller
 {
     /**
-     * Check if the user has access to onboarding records.
-     */
-    private function hasAccess(Request $request)
-    {
-        $user = $request->user();
-        if (!$user) {
-            Log::warning('No authenticated user found for onboarding access');
-            return false;
-        }
-        if (!$user->isActive()) {
-            Log::warning('Inactive user attempted to access onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
-            return false;
-        }
-        // Allow all roles: admin, navigator, payer, user, claims
-        $allowedRoles = ['admin', User::ROLE_NAVIGATOR, User::ROLE_PAYER, User::ROLE_USER, User::ROLE_CLAIMS];
-        $hasAccess = in_array($user->role, $allowedRoles);
-        Log::debug('Checking access for user:', ['user_id' => $user->id, 'role' => $user->role, 'has_access' => $hasAccess]);
-        return $hasAccess;
-    }
-
-    /**
-     * Get all onboardings (admin, navigator, payer, user).
+     * Get all onboardings (admin, navigator, payer, user, claims).
      */
     public function index(Request $request)
     {
         try {
-            if (!$this->hasAccess($request)) {
-                Log::warning('Unauthorized attempt to fetch onboardings:', ['user_id' => $request->user()?->id, 'role' => $request->user()?->role]);
+            $user = $request->user();
+            Log::debug('index debug:', [
+                'user_exists' => !empty($user),
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'is_active' => $user?->isActive(),
+            ]);
+            if (!$user) {
+                Log::warning('No authenticated user found for onboarding access');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            if (!$user->isActive()) {
+                Log::warning('Inactive user attempted to access onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            $allowedRoles = [
+                User::ROLE_ADMIN,
+                User::ROLE_NAVIGATOR,
+                User::ROLE_PAYER,
+                User::ROLE_USER,
+                User::ROLE_CLAIMS
+            ];
+            if (!in_array($user->role, $allowedRoles)) {
+                Log::warning('Unauthorized role for fetching onboardings:', ['user_id' => $user->id, 'role' => $user->role]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
             }
 
-            $user = $request->user();
             $query = Onboarding::query();
 
             // Restrict payers to only see onboardings associated with their payer_id
@@ -84,20 +91,48 @@ class AdminOnboardingController extends Controller
     }
 
     /**
-     * Get a specific onboarding (admin, navigator, payer, user).
+     * Get a specific onboarding (admin, navigator, payer, user, claims).
      */
     public function show(Request $request, $id)
     {
         try {
-            if (!$this->hasAccess($request)) {
-                Log::warning('Unauthorized attempt to fetch onboarding:', ['user_id' => $request->user()?->id, 'role' => $request->user()?->role, 'onboarding_id' => $id]);
+            $user = $request->user();
+            Log::debug('show debug:', [
+                'user_exists' => !empty($user),
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'is_active' => $user?->isActive(),
+                'onboarding_id' => $id
+            ]);
+            if (!$user) {
+                Log::warning('No authenticated user found for onboarding access');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            if (!$user->isActive()) {
+                Log::warning('Inactive user attempted to access onboarding:', ['user_id' => $user->id, 'role' => $user->role, 'onboarding_id' => $id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            $allowedRoles = [
+                User::ROLE_ADMIN,
+                User::ROLE_NAVIGATOR,
+                User::ROLE_PAYER,
+                User::ROLE_USER,
+                User::ROLE_CLAIMS
+            ];
+            if (!in_array($user->role, $allowedRoles)) {
+                Log::warning('Unauthorized role for fetching onboarding:', ['user_id' => $user->id, 'role' => $user->role, 'onboarding_id' => $id]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
             }
 
-            $user = $request->user();
             $onboarding = Onboarding::findOrFail($id);
 
             // Restrict payers to only see their associated onboardings
@@ -149,22 +184,49 @@ class AdminOnboardingController extends Controller
     }
 
     /**
-     * Create a new onboarding (admin, navigator, payer, user).
+     * Create a new onboarding (admin, navigator, payer, user, claims).
      */
     public function store(Request $request)
     {
         Log::info('Onboarding creation request received:', ['user_id' => $request->user()?->id, 'role' => $request->user()?->role, 'data' => $request->all()]);
 
         try {
-            if (!$this->hasAccess($request)) {
-                Log::warning('Unauthorized attempt to create onboarding:', ['user_id' => $request->user()?->id, 'role' => $request->user()?->role]);
+            $user = $request->user();
+            Log::debug('store debug:', [
+                'user_exists' => !empty($user),
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'is_active' => $user?->isActive(),
+            ]);
+            if (!$user) {
+                Log::warning('No authenticated user found for onboarding creation');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            if (!$user->isActive()) {
+                Log::warning('Inactive user attempted to create onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            $allowedRoles = [
+                User::ROLE_ADMIN,
+                User::ROLE_NAVIGATOR,
+                User::ROLE_PAYER,
+                User::ROLE_USER,
+                User::ROLE_CLAIMS
+            ];
+            if (!in_array($user->role, $allowedRoles)) {
+                Log::warning('Unauthorized role for creating onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
             }
 
-            $user = $request->user();
             if ($user->role === User::ROLE_PAYER && !$user->payer_id) {
                 Log::warning('Payer has no payer_id:', ['user_id' => $user->id]);
                 return response()->json([
@@ -179,7 +241,7 @@ class AdminOnboardingController extends Controller
             $paymentId = $request->payment_id;
 
             if ($paymentMethod === 'mpesa') {
-                $payment = MpesaPayment::where('id', $paymentId)
+                $payment = Mpesa::where('id', $paymentId)
                     ->where('status', 'completed')
                     ->first();
                 if (!$payment) {
@@ -282,7 +344,7 @@ class AdminOnboardingController extends Controller
 
                 // Update payment record with onboarding_id
                 if ($paymentMethod === 'mpesa') {
-                    MpesaPayment::where('id', $paymentId)
+                    Mpesa::where('id', $paymentId)
                         ->update(['onboarding_id' => $onboarding->id]);
                 } elseif ($paymentMethod === 'insurance') {
                     Insurance::where('id', $paymentId)
@@ -313,20 +375,48 @@ class AdminOnboardingController extends Controller
     }
 
     /**
-     * Update an onboarding (admin, navigator, payer, user).
+     * Update an onboarding (admin, navigator, payer, user, claims).
      */
     public function update(Request $request, $id)
     {
         try {
-            if (!$this->hasAccess($request)) {
-                Log::warning('Unauthorized attempt to update onboarding:', ['user_id' => $request->user()?->id, 'role' => $request->user()?->role, 'onboarding_id' => $id]);
+            $user = $request->user();
+            Log::debug('update debug:', [
+                'user_exists' => !empty($user),
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'is_active' => $user?->isActive(),
+                'onboarding_id' => $id
+            ]);
+            if (!$user) {
+                Log::warning('No authenticated user found for onboarding update');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            if (!$user->isActive()) {
+                Log::warning('Inactive user attempted to update onboarding:', ['user_id' => $user->id, 'role' => $user->role, 'onboarding_id' => $id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            $allowedRoles = [
+                User::ROLE_ADMIN,
+                User::ROLE_NAVIGATOR,
+                User::ROLE_PAYER,
+                User::ROLE_USER,
+                User::ROLE_CLAIMS
+            ];
+            if (!in_array($user->role, $allowedRoles)) {
+                Log::warning('Unauthorized role for updating onboarding:', ['user_id' => $user->id, 'role' => $user->role, 'onboarding_id' => $id]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
             }
 
-            $user = $request->user();
             $onboarding = Onboarding::findOrFail($id);
 
             // Restrict payers to their associated onboardings
@@ -444,20 +534,48 @@ class AdminOnboardingController extends Controller
     }
 
     /**
-     * Mark onboarding as complete (admin, navigator, payer, user).
+     * Mark onboarding as complete (admin, navigator, payer, user, claims).
      */
     public function complete(Request $request, $id)
     {
         try {
-            if (!$this->hasAccess($request)) {
-                Log::warning('Unauthorized attempt to complete onboarding:', ['user_id' => $request->user()?->id, 'role' => $request->user()?->role, 'onboarding_id' => $id]);
+            $user = $request->user();
+            Log::debug('complete debug:', [
+                'user_exists' => !empty($user),
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'is_active' => $user?->isActive(),
+                'onboarding_id' => $id
+            ]);
+            if (!$user) {
+                Log::warning('No authenticated user found for onboarding completion');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            if (!$user->isActive()) {
+                Log::warning('Inactive user attempted to complete onboarding:', ['user_id' => $user->id, 'role' => $user->role, 'onboarding_id' => $id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            $allowedRoles = [
+                User::ROLE_ADMIN,
+                User::ROLE_NAVIGATOR,
+                User::ROLE_PAYER,
+                User::ROLE_USER,
+                User::ROLE_CLAIMS
+            ];
+            if (!in_array($user->role, $allowedRoles)) {
+                Log::warning('Unauthorized role for completing onboarding:', ['user_id' => $user->id, 'role' => $user->role, 'onboarding_id' => $id]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
             }
 
-            $user = $request->user();
             $onboarding = Onboarding::findOrFail($id);
 
             // Restrict payers to their associated onboardings
@@ -522,20 +640,48 @@ class AdminOnboardingController extends Controller
     }
 
     /**
-     * Delete an onboarding (admin, navigator, payer, user).
+     * Delete an onboarding (admin, navigator, payer, user, claims).
      */
     public function destroy(Request $request, $id)
     {
         try {
-            if (!$this->hasAccess($request)) {
-                Log::warning('Unauthorized attempt to delete onboarding:', ['user_id' => $request->user()?->id, 'role' => $request->user()?->role, 'onboarding_id' => $id]);
+            $user = $request->user();
+            Log::debug('destroy debug:', [
+                'user_exists' => !empty($user),
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'is_active' => $user?->isActive(),
+                'onboarding_id' => $id
+            ]);
+            if (!$user) {
+                Log::warning('No authenticated user found for onboarding deletion');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            if (!$user->isActive()) {
+                Log::warning('Inactive user attempted to delete onboarding:', ['user_id' => $user->id, 'role' => $user->role, 'onboarding_id' => $id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            $allowedRoles = [
+                User::ROLE_ADMIN,
+                User::ROLE_NAVIGATOR,
+                User::ROLE_PAYER,
+                User::ROLE_USER,
+                User::ROLE_CLAIMS
+            ];
+            if (!in_array($user->role, $allowedRoles)) {
+                Log::warning('Unauthorized role for deleting onboarding:', ['user_id' => $user->id, 'role' => $user->role, 'onboarding_id' => $id]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
             }
 
-            $user = $request->user();
             $onboarding = Onboarding::findOrFail($id);
 
             // Restrict payers to their associated onboardings
@@ -561,14 +707,14 @@ class AdminOnboardingController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized to delete this onboarding'
-                    ], 403);
+                ], 403);
             }
 
             // Delete onboarding in a transaction
             DB::transaction(function () use ($onboarding, $user, $id) {
                 // Update associated payment records to remove onboarding_id
                 if ($onboarding->payment_method === 'mpesa') {
-                    MpesaPayment::where('onboarding_id', $onboarding->id)
+                    Mpesa::where('onboarding_id', $onboarding->id)
                         ->update(['onboarding_id' => null]);
                 } elseif ($onboarding->payment_method === 'insurance') {
                     Insurance::where('onboarding_id', $onboarding->id)
@@ -601,25 +747,53 @@ class AdminOnboardingController extends Controller
     }
 
     /**
-     * Get onboarding for the authenticated user (admin, navigator, payer, user).
+     * Get onboarding for the authenticated user (admin, navigator, payer, user, claims).
      */
     public function getUserOnboarding(Request $request)
     {
         try {
-            if (!$this->hasAccess($request)) {
-                Log::warning('Unauthorized attempt to fetch user onboarding:', ['user_id' => $request->user()?->id, 'role' => $request->user()?->role]);
+            $user = $request->user();
+            Log::debug('getUserOnboarding debug:', [
+                'user_exists' => !empty($user),
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'is_active' => $user?->isActive(),
+            ]);
+            if (!$user) {
+                Log::warning('No authenticated user found for fetching user onboarding');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            if (!$user->isActive()) {
+                Log::warning('Inactive user attempted to fetch user onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            $allowedRoles = [
+                User::ROLE_ADMIN,
+                User::ROLE_NAVIGATOR,
+                User::ROLE_PAYER,
+                User::ROLE_USER,
+                User::ROLE_CLAIMS
+            ];
+            if (!in_array($user->role, $allowedRoles)) {
+                Log::warning('Unauthorized role for fetching user onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
             }
 
-            $user = $request->user();
             $query = Onboarding::query();
 
             // Restrict to user's own onboarding or associated records
             if ($user->role === User::ROLE_USER) {
                 $query->where('user_id', $user->id);
+                Log::debug('Querying onboarding for ROLE_USER:', ['user_id' => $user->id]);
             } elseif ($user->role === User::ROLE_PAYER) {
                 if (!$user->payer_id) {
                     Log::warning('Payer has no payer_id:', ['user_id' => $user->id]);
@@ -629,10 +803,19 @@ class AdminOnboardingController extends Controller
                     ], 403);
                 }
                 $query->where('payer_id', $user->payer_id);
+                Log::debug('Querying onboarding for ROLE_PAYER:', ['user_id' => $user->id, 'payer_id' => $user->payer_id]);
+            } else {
+                $query->where('user_id', $user->id);
+                Log::debug('Querying onboarding for other roles:', ['user_id' => $user->id, 'role' => $user->role]);
             }
-            // Admins and navigators can see any onboarding, so no additional restriction
 
             $onboarding = $query->first();
+            Log::debug('Onboarding query result:', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'onboarding_exists' => !empty($onboarding),
+                'onboarding_id' => $onboarding?->id
+            ]);
 
             if (!$onboarding) {
                 Log::info('No onboarding record found:', ['user_id' => $user->id, 'role' => $user->role]);
@@ -653,6 +836,206 @@ class AdminOnboardingController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch onboarding',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Update the authenticated user's onboarding data (user only).
+     */
+    public function updateUserOnboarding(Request $request)
+    {
+        try {
+            $user = $request->user();
+            Log::debug('updateUserOnboarding debug:', [
+                'user_exists' => !empty($user),
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'is_active' => $user?->isActive(),
+            ]);
+            if (!$user) {
+                Log::warning('No authenticated user found for updating user onboarding');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            if (!$user->isActive()) {
+                Log::warning('Inactive user attempted to update onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            if ($user->role !== User::ROLE_USER) {
+                Log::warning('Unauthorized role for updating user onboarding:', ['user_id' => $user->id, 'role' => $user->role]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to update user onboarding'
+                ], 403);
+            }
+
+            $onboarding = Onboarding::where('user_id', $user->id)->first();
+            if (!$onboarding) {
+                Log::info('No onboarding record found for user:', ['user_id' => $user->id, 'role' => $user->role]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No onboarding record found'
+                ], 404);
+            }
+
+            // Validate the request
+            $validator = Validator::make($request->all(), [
+                'first_name' => 'required|string|max:50',
+                'middle_name' => 'nullable|string|max:50',
+                'last_name' => 'required|string|max:50',
+                'date_of_birth' => 'required|date',
+                'clinic_id' => 'required|exists:clinics,id',
+                'age' => 'required|integer|min:0',
+                'sex' => 'required|in:male,female,other',
+                'emergency_contact_name' => 'required|string|max:100',
+                'emergency_contact_phone' => 'required|string|max:20|regex:/^\+?\d{10,15}$/',
+                'emergency_contact_relation' => 'required|string|max:100',
+                'weight_loss_target' => 'nullable|numeric|min:0',
+                'hba1c_target' => 'nullable|numeric|min:0',
+                'bp_target' => 'nullable|string|regex:/^\d{2,3}\/\d{2,3}$/',
+                'activity_goal' => 'nullable|string|max:100',
+                'hba1c_baseline' => 'nullable|numeric|min:0',
+                'ldl_baseline' => 'nullable|numeric|min:0',
+                'bp_baseline' => 'nullable|string|regex:/^\d{2,3}\/\d{2,3}$/',
+                'weight_baseline' => 'nullable|numeric|min:0',
+                'height' => 'nullable|numeric|min:0',
+                'bmi_baseline' => 'nullable|numeric|min:0',
+                'serum_creatinine_baseline' => 'nullable|numeric|min:0',
+                'ecg_baseline' => 'nullable|string|max:100',
+                'physical_activity_level' => 'nullable|in:sedentary,lightly_active,moderately_active,very_active',
+                'diagnoses' => 'nullable|array',
+                'diagnoses.*' => 'string|max:255',
+                'brief_medical_history' => 'nullable|string|max:1000',
+                'date_of_diagnosis' => 'nullable|date',
+                'past_medical_interventions' => 'nullable|string|max:1000',
+                'relevant_family_history' => 'nullable|string|max:1000',
+                'has_weighing_scale' => 'boolean',
+                'has_glucometer' => 'boolean',
+                'has_bp_machine' => 'boolean',
+                'has_tape_measure' => 'boolean',
+                'dietary_restrictions' => 'nullable|string|max:1000',
+                'allergies_intolerances' => 'nullable|string|max:1000',
+                'lifestyle_factors' => 'nullable|string|max:1000',
+                'physical_limitations' => 'nullable|string|max:1000',
+                'psychosocial_factors' => 'nullable|string|max:1000',
+                'initial_consultation_date' => 'nullable|date',
+                'follow_up_review1' => 'nullable|date',
+                'follow_up_review2' => 'nullable|date',
+                'additional_review' => 'nullable|date',
+                'consent_date' => 'nullable|date',
+                'consent_to_telehealth' => 'boolean',
+                'consent_to_risks' => 'boolean',
+                'consent_to_data_use' => 'boolean',
+                'activation_code' => 'nullable|string|max:255',
+                'hba1c_latest_reading_date' => 'nullable|date',
+                'ldl_latest_reading_date' => 'nullable|date',
+                'bp_latest_reading_date' => 'nullable|date',
+                'weight_latest_reading_date' => 'nullable|date',
+                'serum_creatinine_latest_reading_date' => 'nullable|date',
+                'ecg_latest_reading_date' => 'nullable|date',
+            ]);
+
+            if ($validator->fails()) {
+                Log::warning('Validation failed for updating user onboarding:', [
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'errors' => $validator->errors()->all()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Update onboarding in a transaction
+            $onboarding = DB::transaction(function () use ($request, $onboarding, $user) {
+                $updateData = $request->only([
+                    'first_name',
+                    'middle_name',
+                    'last_name',
+                    'date_of_birth',
+                    'clinic_id',
+                    'age',
+                    'sex',
+                    'emergency_contact_name',
+                    'emergency_contact_phone',
+                    'emergency_contact_relation',
+                    'weight_loss_target',
+                    'hba1c_target',
+                    'bp_target',
+                    'activity_goal',
+                    'hba1c_baseline',
+                    'ldl_baseline',
+                    'bp_baseline',
+                    'weight_baseline',
+                    'height',
+                    'bmi_baseline',
+                    'serum_creatinine_baseline',
+                    'ecg_baseline',
+                    'physical_activity_level',
+                    'diagnoses',
+                    'brief_medical_history',
+                    'date_of_diagnosis',
+                    'past_medical_interventions',
+                    'relevant_family_history',
+                    'has_weighing_scale',
+                    'has_glucometer',
+                    'has_bp_machine',
+                    'has_tape_measure',
+                    'dietary_restrictions',
+                    'allergies_intolerances',
+                    'lifestyle_factors',
+                    'physical_limitations',
+                    'psychosocial_factors',
+                    'initial_consultation_date',
+                    'follow_up_review1',
+                    'follow_up_review2',
+                    'additional_review',
+                    'consent_date',
+                    'consent_to_telehealth',
+                    'consent_to_risks',
+                    'consent_to_data_use',
+                    'activation_code',
+                    'hba1c_latest_reading_date',
+                    'ldl_latest_reading_date',
+                    'bp_latest_reading_date',
+                    'weight_latest_reading_date',
+                    'serum_creatinine_latest_reading_date',
+                    'ecg_latest_reading_date',
+                ]);
+
+                $onboarding->update($updateData);
+                return $onboarding;
+            });
+
+            Log::info('User onboarding updated successfully:', [
+                'onboarding_id' => $onboarding->id,
+                'user_id' => $user->id,
+                'role' => $user->role
+            ]);
+            return response()->json([
+                'success' => true,
+                'message' => 'Onboarding updated successfully',
+                'data' => $onboarding
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error updating user onboarding:', [
+                'user_id' => $request->user()?->id,
+                'role' => $request->user()?->role,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update onboarding',
                 'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }

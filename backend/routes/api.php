@@ -7,82 +7,104 @@ use App\Http\Controllers\PayerController;
 use App\Http\Controllers\ClinicController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\AdminOnboardingController;
-use App\Http\Controllers\InsuranceController;
 use App\Http\Controllers\WeeklyAssessmentController;
 use App\Http\Controllers\ThreeMonthlyAssessmentController;
 use App\Http\Controllers\SixMonthlyAssessmentController;
 use App\Http\Controllers\GroupAssessmentController;
 use App\Http\Controllers\SchemeController;
 use App\Http\Controllers\AdminUserController;
-use App\Http\Controllers\MpesaPaymentController;
 use App\Http\Controllers\MedicationUseController;
+use App\Http\Controllers\InsuranceController;
 
 // Public routes
-Route::post('/register', [AccountController::class, 'register']);
-Route::post('/login', [AccountController::class, 'login']);
+Route::post('/register', [AccountController::class, 'register'])->name('auth.register');
+Route::post('/login', [AccountController::class, 'login'])->name('auth.login');
 
+// Authenticated routes
 Route::middleware('auth:sanctum')->group(function () {
     // User routes
-    Route::get('/users', [AccountController::class, 'getUsers']);
-    Route::get('/user', [AccountController::class, 'getUser']);
-    Route::put('/users/{id}', [AccountController::class, 'updateUser']);
-    Route::delete('/user/delete', [AccountController::class, 'delete']);
-    Route::post('/admin/users', [AdminUserController::class, 'store']);
-    Route::put('/admin/users/{id}', [AdminUserController::class, 'update']);
-    
-    // Insurance routes
-    Route::get('/insurances', [InsuranceController::class, 'index']);
-    Route::get('/insurances/{id}', [InsuranceController::class, 'show']);
-    Route::post('/insurances', [InsuranceController::class, 'store']);
-    Route::match(['put', 'post'], '/insurances/{id}', [InsuranceController::class, 'update']);
-    Route::delete('/insurances/{id}', [InsuranceController::class, 'destroy']);
-    Route::post('/insurances/{id}/approve', [InsuranceController::class, 'approve']);
-    
-    // Mpesa payment routes
-    Route::post('/mpesa/initiate-payment', [MpesaPaymentController::class, 'initiate']);
-    
+    Route::prefix('users')->group(function () {
+        Route::get('/', [AccountController::class, 'getUsers'])->name('users.index');
+        Route::get('/me', [AccountController::class, 'getUser'])->name('users.me');
+        Route::put('/{id}', [AccountController::class, 'updateUser'])->name('users.update');
+        Route::delete('/delete', [AccountController::class, 'delete'])->name('users.delete');
+    });
+
+    // Admin User routes
+    Route::prefix('admin/users')->group(function () {
+        Route::post('/', [AdminUserController::class, 'store'])->name('admin.users.store');
+        Route::put('/{id}', [AdminUserController::class, 'update'])->name('admin.users.update');
+    });
+
     // Payer routes
-    Route::get('/payers', [PayerController::class, 'index']);
-    Route::get('/payers/{id}', [PayerController::class, 'show']);
-    Route::post('/payers', [PayerController::class, 'store']);
-    Route::put('/payers/{id}', [PayerController::class, 'update']);
-    Route::delete('/payer/delete', [PayerController::class, 'destroy']);
-    Route::post('/payer/activate', [PayerController::class, 'activate']);
-    Route::post('/payer/deactivate', [PayerController::class, 'deactivate']);
+    Route::prefix('payers')->group(function () {
+        Route::get('/', [PayerController::class, 'index'])->name('payers.index');
+        Route::get('/{id}', [PayerController::class, 'show'])->name('payers.show');
+        Route::post('/', [PayerController::class, 'store'])->name('payers.store');
+        Route::put('/{id}', [PayerController::class, 'update'])->name('payers.update');
+        Route::delete('/delete', [PayerController::class, 'destroy'])->name('payers.delete');
+        Route::post('/activate', [PayerController::class, 'activate'])->name('payers.activate');
+        Route::post('/deactivate', [PayerController::class, 'deactivate'])->name('payers.deactivate');
+    });
 
     // Clinic routes
-    Route::get('/clinics', [ClinicController::class, 'index']);
-    Route::get('/clinics/{id}', [ClinicController::class, 'show']);
-    Route::post('/clinics', [ClinicController::class, 'store']);
-    Route::put('/clinics/{id}', [ClinicController::class, 'update']);
-    Route::delete('/clinic/delete', [ClinicController::class, 'destroy']);
-    Route::post('/clinic/activate', [ClinicController::class, 'activate']);
-    Route::post('/clinic/deactivate', [ClinicController::class, 'deactivate']);
-    
-    // User Onboarding routes
-    Route::post('/onboardings', [OnboardingController::class, 'store']);
-    Route::get('/onboarding/check/{user_id}', [OnboardingController::class, 'check']);
-    
-    // Admin Onboarding routes
-    Route::get('/adminonboardings', [AdminOnboardingController::class, 'index']);
-    Route::get('/adminonboardings/{id}', [AdminOnboardingController::class, 'show']);
-    Route::post('/adminonboardings', [AdminOnboardingController::class, 'store']);
-    Route::put('/adminonboardings/{id}', [AdminOnboardingController::class, 'update']);
-    Route::delete('/adminonboardings/{id}', [AdminOnboardingController::class, 'destroy']);
-    Route::post('/adminonboardings/{id}/complete', [AdminOnboardingController::class, 'complete']);
-    
-    // Assessment routes
-    Route::get('/weekly-assessments', [WeeklyAssessmentController::class, 'index']);
-    Route::post('/weekly-assessments', [WeeklyAssessmentController::class, 'store']);
-    Route::get('/weekly-assessments/{id}', [WeeklyAssessmentController::class, 'show']);
-    Route::put('/weekly-assessments/{id}', [WeeklyAssessmentController::class, 'update']);
-    Route::delete('/weekly-assessments/{id}', [WeeklyAssessmentController::class, 'destroy']);
+    Route::prefix('clinics')->group(function () {
+        Route::get('/', [ClinicController::class, 'index'])->name('clinics.index');
+        Route::get('/{id}', [ClinicController::class, 'show'])->name('clinics.show');
+        Route::post('/', [ClinicController::class, 'store'])->name('clinics.store');
+        Route::put('/{id}', [ClinicController::class, 'update'])->name('clinics.update');
+        Route::delete('/delete', [ClinicController::class, 'destroy'])->name('clinics.delete');
+        Route::post('/activate', [ClinicController::class, 'activate'])->name('clinics.activate');
+        Route::post('/deactivate', [ClinicController::class, 'deactivate'])->name('clinics.deactivate');
+    });
 
-    Route::get('/three-monthly-assessments', [ThreeMonthlyAssessmentController::class, 'index']);
-    Route::post('/three-monthly-assessments', [ThreeMonthlyAssessmentController::class, 'store']);
-    Route::get('/three-monthly-assessments/{id}', [ThreeMonthlyAssessmentController::class, 'show']);
-    Route::put('/three-monthly-assessments/{id}', [ThreeMonthlyAssessmentController::class, 'update']);
-    Route::delete('/three-monthly-assessments/{id}', [ThreeMonthlyAssessmentController::class, 'destroy']);
+    // Onboarding routes (self-onboarding)
+    Route::prefix('onboardings')->group(function () {
+        Route::post('/', [OnboardingController::class, 'store'])->name('onboardings.store');
+        Route::get('/check/{user_id}', [OnboardingController::class, 'check'])->name('onboardings.check');
+
+    });
+
+    // Admin Onboarding routes
+    Route::prefix('adminonboardings')->group(function () {
+        Route::get('/', [AdminOnboardingController::class, 'index'])->name('adminonboardings.index');
+        Route::get('/{id}', [AdminOnboardingController::class, 'show'])->name('adminonboardings.show');
+        Route::post('/', [AdminOnboardingController::class, 'store'])->name('adminonboardings.store');
+        Route::put('/{id}', [AdminOnboardingController::class, 'update'])->name('adminonboardings.update');
+        Route::delete('/{id}', [AdminOnboardingController::class, 'destroy'])->name('adminonboardings.delete');
+        Route::post('/{id}/complete', [AdminOnboardingController::class, 'complete'])->name('adminonboardings.complete');
+        Route::put('/user/onboarding', [AdminOnboardingController::class, 'updateUserOnboarding'])->name('adminonboardings.user.update');
+    });
+
+    // User Onboarding routes
+    Route::get('/user/onboarding', [AdminOnboardingController::class, 'getUserOnboarding'])->name('user.onboarding.get');
+    Route::post('/user/onboarding', [AdminOnboardingController::class, 'updateUserOnboarding'])->name('user.onboarding.create');
+
+    // Insurance routes
+    Route::prefix('insurance')->group(function () {
+        Route::get('/', [InsuranceController::class, 'index'])->name('insurance.index');
+        Route::get('/{id}', [InsuranceController::class, 'show'])->name('insurance.show');
+        Route::post('/', [InsuranceController::class, 'store'])->name('insurance.store');
+        Route::put('/{id}', [InsuranceController::class, 'update'])->name('insurance.update');
+        Route::delete('/{id}/document', [InsuranceController::class, 'deleteDocument'])->name('insurance.document.delete');
+    });
+
+    // Assessment routes
+    Route::prefix('weekly-assessments')->group(function () {
+        Route::get('/', [WeeklyAssessmentController::class, 'index'])->name('weekly-assessments.index');
+        Route::post('/', [WeeklyAssessmentController::class, 'store'])->name('weekly-assessments.store');
+        Route::get('/{id}', [WeeklyAssessmentController::class, 'show'])->name('weekly-assessments.show');
+        Route::put('/{id}', [WeeklyAssessmentController::class, 'update'])->name('weekly-assessments.update');
+        Route::delete('/{id}', [WeeklyAssessmentController::class, 'destroy'])->name('weekly-assessments.delete');
+    });
+
+    Route::prefix('three-monthly-assessments')->group(function () {
+        Route::get('/', [ThreeMonthlyAssessmentController::class, 'index'])->name('three-monthly-assessments.index');
+        Route::post('/', [ThreeMonthlyAssessmentController::class, 'store'])->name('three-monthly-assessments.store');
+        Route::get('/{id}', [ThreeMonthlyAssessmentController::class, 'show'])->name('three-monthly-assessments.show');
+        Route::put('/{id}', [ThreeMonthlyAssessmentController::class, 'update'])->name('three-monthly-assessments.update');
+        Route::delete('/{id}', [ThreeMonthlyAssessmentController::class, 'destroy'])->name('three-monthly-assessments.delete');
+    });
 
     Route::get('/six-monthly-assessments', [SixMonthlyAssessmentController::class, 'index']);
     Route::post('/six-monthly-assessments', [SixMonthlyAssessmentController::class, 'store']);
@@ -90,31 +112,49 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/six-monthly-assessments/{id}', [SixMonthlyAssessmentController::class, 'update']);
     Route::delete('/six-monthly-assessments/{id}', [SixMonthlyAssessmentController::class, 'destroy']);
 
-    Route::get('/group-assessments', [GroupAssessmentController::class, 'getGroupAssessments']);
-    Route::get('/onboarding-columns', [GroupAssessmentController::class, 'getOnboardingColumns']);
+
+    // Group Assessments routes
+    Route::prefix('group-assessments')->group(function () {
+        Route::get('/', [GroupAssessmentController::class, 'getGroupAssessments'])->name('group-assessments.index');
+        Route::get('/onboarding-columns', [GroupAssessmentController::class, 'getOnboardingColumns'])->name('group-assessments.onboarding-columns');
+    });
 
     // Scheme routes
-    Route::get('/schemes', [SchemeController::class, 'index']);
-    Route::get('/schemes/active', [SchemeController::class, 'activeSchemes']);
-    Route::get('/schemes/{id}', [SchemeController::class, 'show']);
-    Route::post('/schemes', [SchemeController::class, 'store']);
-    Route::put('/schemes/{id}', [SchemeController::class, 'update']);
-    Route::delete('/schemes/{id}', [SchemeController::class, 'destroy']);
+    Route::prefix('schemes')->group(function () {
+        Route::get('/', [SchemeController::class, 'index'])->name('schemes.index');
+        Route::get('/active', [SchemeController::class, 'activeSchemes'])->name('schemes.active');
+        Route::get('/{id}', [SchemeController::class, 'show'])->name('schemes.show');
+        Route::post('/', [SchemeController::class, 'store'])->name('schemes.store');
+        Route::put('/{id}', [SchemeController::class, 'update'])->name('schemes.update');
+        Route::delete('/{id}', [SchemeController::class, 'destroy'])->name('schemes.delete');
+    });
 
-    // User onboarding data
-    Route::get('/user/onboarding', [AdminOnboardingController::class, 'getUserOnboarding']);
-    
+    // Medication Use routes
+    Route::prefix('onboardings/{onboardingId}/medication-uses')->group(function () {
+        Route::get('/', [MedicationUseController::class, 'index'])->name('medication-uses.index');
+        Route::post('/', [MedicationUseController::class, 'store'])->name('medication-uses.store');
+    });
+
+    Route::prefix('medication-uses')->group(function () {
+        Route::put('/{medicationUse}', [MedicationUseController::class, 'update'])->name('medication-uses.update');
+        Route::delete('/{medicationUse}', [MedicationUseController::class, 'destroy'])->name('medication-uses.delete');
+    });
+
     // Medication routes
-    Route::get('/medications', [MedicationController::class, 'index']);
-    Route::post('/medications', [MedicationController::class, 'store']);
-    Route::get('/medications/{id}', [MedicationController::class, 'show']);
-    Route::put('/medications/{id}', [MedicationController::class, 'update']);
-    Route::delete('/medications/{id}', [MedicationController::class, 'destroy']);
+    Route::prefix('medications')->group(function () {
+        Route::get('/', [MedicationController::class, 'index'])->name('medications.index');
+        Route::post('/', [MedicationController::class, 'store'])->name('medications.store');
+        Route::get('/{id}', [MedicationController::class, 'show'])->name('medications.show');
+        Route::put('/{id}', [MedicationController::class, 'update'])->name('medications.update');
+        Route::delete('/{id}', [MedicationController::class, 'destroy'])->name('medications.delete');
+    });
 
-    Route::get('/medications-uses', [MedicationUseController::class, 'getMedications']);
-    Route::get('/adminonboardings', [MedicationUseController::class, 'getOnboardings']);
-    Route::get('/onboardings/{onboardingId}/medication-uses', [MedicationUseController::class, 'index']);
-    Route::post('/onboardings/{onboardingId}/medication-uses', [MedicationUseController::class, 'store']);
-    Route::put('/medication-uses/{id}', [MedicationUseController::class, 'update']);
-    Route::delete('/medication-uses/{id}', [MedicationUseController::class, 'destroy']);
+    //Insurance routes
+    Route::prefix('admin/onboardings')->group(function () {
+        Route::get('/', [InsuranceController::class, 'index'])->name('admin.onboardings.index');
+        Route::get('/{id}', [InsuranceController::class, 'show'])->name('admin.onboardings.show');
+        Route::post('/insurance', [InsuranceController::class, 'store'])->name('admin.onboardings.insurance.store');
+        Route::put('/{id}/insurance', [InsuranceController::class, 'update'])->name('admin.onboardings.insurance.update');
+        Route::delete('/{id}/document', [InsuranceController::class, 'deleteDocument'])->name('admin.onboardings.document.delete');
+    });
 });

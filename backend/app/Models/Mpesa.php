@@ -5,13 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class MpesaPayment extends Model
+class Mpesa extends Model
 {
     use HasFactory;
 
     protected $table = 'mpesa';
 
     protected $fillable = [
+        'user_id',
         'onboarding_id',
         'mpesa_reference',
         'client_name',
@@ -20,15 +21,15 @@ class MpesaPayment extends Model
         'transaction_type',
         'status',
         'confirmation_code',
-        'user_id', // Added if used in MpesaPaymentController
-    ];
-
-    protected $casts = [
-        'amount' => 'decimal:2',
     ];
 
     public function onboarding()
     {
         return $this->belongsTo(Onboarding::class, 'onboarding_id');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
     }
 }

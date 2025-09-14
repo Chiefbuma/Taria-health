@@ -19,6 +19,7 @@ class AccountController extends Controller
             'phone' => 'required|string|max:20|unique:users',
             'password' => 'required|string|min:6|confirmed',
             'role' => 'sometimes|in:admin,user,navigator,payer,guest,claims',
+            'payer_id' => 'sometimes|exists:payers,id', // Add validation for payer_id
         ]);
 
         if ($validator->fails()) {
@@ -35,6 +36,7 @@ class AccountController extends Controller
                 'phone' => $request->phone,
                 'password' => Hash::make($request->password),
                 'role' => $request->role ?? User::ROLE_USER,
+                'payer_id' => $request->payer_id, // Include payer_id
                 'is_active' => true,
             ]);
 
@@ -43,7 +45,18 @@ class AccountController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Registration successful',
-                'user' => $user->only(['id', 'email', 'phone', 'role', 'is_active']),
+                'user' => [
+                    'id' => $user->id,
+                    'email' => $user->email,
+                    'phone' => $user->phone,
+                    'role' => $user->role,
+                    'payer_id' => $user->payer_id,
+                    'payer' => $user->payer ? [
+                        'id' => $user->payer->id,
+                        'name' => $user->payer->name,
+                    ] : null,
+                    'is_active' => $user->is_active,
+                ],
                 'token' => $token,
             ], 201);
 
@@ -75,7 +88,7 @@ class AccountController extends Controller
         }
 
         try {
-            $user = User::where('phone', $request->phone)->first();
+            $user = User::where('phone', $request->phone)->first()->load('payer');
 
             if (!$user || !Hash::check($request->password, $user->password)) {
                 return response()->json([
@@ -91,12 +104,30 @@ class AccountController extends Controller
                 ], 403);
             }
 
+            if ($user->isPayer() && !$user->payer_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payer ID is missing for this account. Please contact admin.'
+                ], 403);
+            }
+
             $token = $user->createToken('auth_token')->plainTextToken;
 
             return response()->json([
                 'success' => true,
                 'message' => 'Login successful',
-                'user' => $user->only(['id', 'email', 'phone', 'role', 'is_active']),
+                'user' => [
+                    'id' => $user->id,
+                    'email' => $user->email,
+                    'phone' => $user->phone,
+                    'role' => $user->role,
+                    'payer_id' => $user->payer_id,
+                    'payer' => $user->payer ? [
+                        'id' => $user->payer->id,
+                        'name' => $user->payer->name,
+                    ] : null,
+                    'is_active' => $user->is_active,
+                ],
                 'token' => $token,
             ]);
 
@@ -110,19 +141,37 @@ class AccountController extends Controller
     }
 
     /**
-     * Get all users (admin only).
+     * Get all users (admin or payer).
      */
     public function getUsers(Request $request)
     {
         try {
-            if (!$request->user()->isAdmin()) {
+            $user = $request->user();
+            $query = User::select('id', 'email', 'phone', 'role', 'payer_id', 'is_active', 'created_at', 'updated_at');
+
+            if ($user->isPayer()) {
+                if (!$user->payer_id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payer ID is missing for this account'
+                    ], 403);
+                }
+                $payerId = $request->query('payer_id', $user->payer_id);
+                if ($payerId != $user->payer_id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized: Invalid payer ID'
+                    ], 403);
+                }
+                $query->where('payer_id', $user->payer_id);
+            } elseif (!$user->isAdmin()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
             }
 
-            $users = User::select('id', 'email', 'phone', 'role', 'is_active', 'created_at', 'updated_at')->get();
+            $users = $query->get();
 
             return response()->json([
                 'success' => true,
@@ -139,12 +188,28 @@ class AccountController extends Controller
     }
 
     /**
-     * Update user (admin only).
+     * Update user (admin or payer).
      */
     public function updateUser(Request $request, $id)
     {
         try {
-            if (!$request->user()->isAdmin()) {
+            $user = $request->user();
+            $targetUser = User::findOrFail($id);
+
+            if ($user->isPayer()) {
+                if (!$user->payer_id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payer ID is missing for this account'
+                    ], 403);
+                }
+                if ($targetUser->payer_id != $user->payer_id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized: Cannot modify users from other payers'
+                    ], 403);
+                }
+            } elseif (!$user->isAdmin()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
@@ -155,6 +220,7 @@ class AccountController extends Controller
                 'email' => 'sometimes|string|email|max:255|unique:users,email,' . $id,
                 'phone' => 'sometimes|string|max:20|unique:users,phone,' . $id,
                 'role' => 'sometimes|in:admin,user,navigator,payer,guest,claims',
+                'payer_id' => 'sometimes|exists:payers,id',
                 'is_active' => 'sometimes|boolean',
                 'password' => 'sometimes|string|min:6|confirmed',
             ]);
@@ -167,25 +233,30 @@ class AccountController extends Controller
                 ], 422);
             }
 
-            $user = User::findOrFail($id);
-
-            if ($user->id === $request->user()->id) {
+            if ($targetUser->id === $user->id) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You cannot modify your own account'
                 ], 403);
             }
 
-            $data = $request->only(['email', 'phone', 'role', 'is_active']);
+            $data = $request->only(['email', 'phone', 'role', 'payer_id', 'is_active']);
             if ($request->has('password')) {
                 $data['password'] = Hash::make($request->password);
             }
-            $user->update($data);
+            $targetUser->update($data);
 
             return response()->json([
                 'success' => true,
                 'message' => 'User updated successfully',
-                'user' => $user->only(['id', 'email', 'phone', 'role', 'is_active'])
+                'user' => [
+                    'id' => $targetUser->id,
+                    'email' => $targetUser->email,
+                    'phone' => $targetUser->phone,
+                    'role' => $targetUser->role,
+                    'payer_id' => $targetUser->payer_id,
+                    'is_active' => $targetUser->is_active,
+                ]
             ], 200);
 
         } catch (\Exception $e) {
@@ -198,18 +269,12 @@ class AccountController extends Controller
     }
 
     /**
-     * Delete a user (admin only).
+     * Delete a user (admin or payer).
      */
     public function delete(Request $request)
     {
         try {
-            if (!$request->user()->isAdmin()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
-            }
-
+            $user = $request->user();
             $validator = Validator::make($request->all(), [
                 'id' => 'required|integer|exists:users,id',
             ]);
@@ -222,16 +287,36 @@ class AccountController extends Controller
                 ], 422);
             }
 
-            $user = User::findOrFail($request->id);
+            $targetUser = User::findOrFail($request->id);
 
-            if ($user->id === $request->user()->id) {
+            if ($user->isPayer()) {
+                if (!$user->payer_id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payer ID is missing for this account'
+                    ], 403);
+                }
+                if ($targetUser->payer_id != $user->payer_id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized: Cannot delete users from other payers'
+                    ], 403);
+                }
+            } elseif (!$user->isAdmin()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            if ($targetUser->id === $user->id) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You cannot delete your own account'
                 ], 403);
             }
 
-            $user->delete();
+            $targetUser->delete();
 
             return response()->json([
                 'success' => true,
@@ -253,9 +338,28 @@ class AccountController extends Controller
     public function getUser(Request $request)
     {
         try {
+            $user = $request->user()->load('payer');
+            if ($user->isPayer() && !$user->payer_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payer ID is missing for this account'
+                ], 403);
+            }
+
             return response()->json([
                 'success' => true,
-                'user' => $request->user()->only(['id', 'email', 'phone', 'role', 'is_active'])
+                'user' => [
+                    'id' => $user->id,
+                    'email' => $user->email,
+                    'phone' => $user->phone,
+                    'role' => $user->role,
+                    'payer_id' => $user->payer_id,
+                    'payer' => $user->payer ? [
+                        'id' => $user->payer->id,
+                        'name' => $user->payer->name,
+                    ] : null,
+                    'is_active' => $user->is_active,
+                ]
             ], 200);
 
         } catch (\Exception $e) {

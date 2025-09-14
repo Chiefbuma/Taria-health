@@ -12,20 +12,23 @@ class Insurance extends Model
     protected $table = 'insurance';
 
     protected $fillable = [
+        'user_id',
         'onboarding_id',
         'insurance_provider',
         'policy_number',
-        'is_approved',
-        'user_id',
         'claim_amount',
+        'is_approved',
         'approval_document_path',
         'approval_document_name',
     ];
 
-   
-
     public function onboarding()
     {
-        return $this->belongsTo(Onboarding::class, 'onboarding_id');
+        return $this->hasOne(Onboarding::class, 'insurance_id', 'id');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
     }
 }

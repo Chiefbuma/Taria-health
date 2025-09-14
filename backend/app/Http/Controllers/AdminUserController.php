@@ -18,7 +18,7 @@ class AdminUserController extends Controller
     private function hasAccess(Request $request)
     {
         $user = $request->user();
-        return $user && (
+        return $user && $user->isActive() && (
             $user->isAdmin() ||
             $user->role === User::ROLE_NAVIGATOR ||
             $user->role === User::ROLE_PAYER
@@ -32,7 +32,10 @@ class AdminUserController extends Controller
     {
         try {
             if (!$this->hasAccess($request)) {
-                Log::warning('Unauthorized attempt to fetch users:', ['user_id' => $request->user()->id]);
+                Log::warning('Unauthorized attempt to fetch users:', [
+                    'user_id' => $request->user()?->id,
+                    'role' => $request->user()?->role
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
@@ -44,12 +47,24 @@ class AdminUserController extends Controller
 
             // Restrict payers to only see users with matching payer_id
             if ($user->role === User::ROLE_PAYER) {
+                if (!$user->payer_id) {
+                    Log::warning('Payer has no payer_id:', ['user_id' => $user->id]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payer ID not set for this user'
+                    ], 403);
+                }
                 $query->where('payer_id', $user->payer_id);
             }
 
             $users = $query->get();
 
-            Log::info('Users retrieved successfully:', ['user_id' => $user->id, 'count' => $users->count()]);
+            Log::info('Users retrieved successfully:', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'count' => $users->count(),
+                'payer_id' => $user->payer_id ?? null
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -57,7 +72,12 @@ class AdminUserController extends Controller
                 'users' => $users
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error fetching users:', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            Log::error('Error fetching users:', [
+                'user_id' => $request->user()?->id,
+                'role' => $request->user()?->role,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch users',
@@ -73,31 +93,54 @@ class AdminUserController extends Controller
     {
         try {
             if (!$this->hasAccess($request)) {
-                Log::warning('Unauthorized attempt to fetch user:', ['user_id' => $request->user()->id, 'target_user_id' => $id]);
+                Log::warning('Unauthorized attempt to fetch user:', [
+                    'user_id' => $request->user()?->id,
+                    'role' => $request->user()?->role,
+                    'target_user_id' => $id
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
             }
 
-            $user = User::select('id', 'email', 'phone', 'role', 'payer_id', 'is_active', 'created_at', 'updated_at')
+            $user = $request->user();
+            $targetUser = User::select('id', 'email', 'phone', 'role', 'payer_id', 'is_active', 'created_at', 'updated_at')
                 ->findOrFail($id);
 
             // Restrict payers to only see users with matching payer_id
-            if ($request->user()->role === User::ROLE_PAYER && $user->payer_id !== $request->user()->payer_id) {
-                Log::warning('Payer unauthorized to view user:', ['user_id' => $request->user()->id, 'target_user_id' => $id]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized to view this user'
-                ], 403);
+            if ($user->role === User::ROLE_PAYER) {
+                if (!$user->payer_id) {
+                    Log::warning('Payer has no payer_id:', ['user_id' => $user->id]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payer ID not set for this user'
+                    ], 403);
+                }
+                if ($targetUser->payer_id !== $user->payer_id) {
+                    Log::warning('Payer unauthorized to view user:', [
+                        'user_id' => $user->id,
+                        'target_user_id' => $id,
+                        'payer_id' => $user->payer_id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized to view this user'
+                    ], 403);
+                }
             }
 
-            Log::info('User retrieved successfully:', ['user_id' => $request->user()->id, 'target_user_id' => $id]);
+            Log::info('User retrieved successfully:', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'target_user_id' => $id,
+                'payer_id' => $user->payer_id ?? null
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'User retrieved successfully',
-                'user' => $user
+                'user' => $targetUser
             ], 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             Log::error('User not found:', ['user_id' => $id]);
@@ -106,7 +149,13 @@ class AdminUserController extends Controller
                 'message' => 'User not found'
             ], 404);
         } catch (\Exception $e) {
-            Log::error('Error fetching user:', ['user_id' => $id, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            Log::error('Error fetching user:', [
+                'user_id' => $request->user()?->id,
+                'role' => $request->user()?->role,
+                'target_user_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch user',
@@ -116,26 +165,57 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Create a new user (admin only).
+     * Create a new user (admin, payer).
      */
     public function store(Request $request)
     {
-        if (!$request->user()->isAdmin()) {
-            Log::warning('Unauthorized attempt to create user:', ['user_id' => $request->user()->id]);
+        $user = $request->user();
+        Log::debug('store debug:', [
+            'user_exists' => !empty($user),
+            'user_id' => $user?->id,
+            'role' => $user?->role,
+            'is_active' => $user?->isActive(),
+            'payer_id' => $user?->payer_id,
+        ]);
+
+        if (!$user || !$user->isActive()) {
+            Log::warning('Unauthorized attempt to create user:', [
+                'user_id' => $user?->id,
+                'role' => $user?->role
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        $allowedRoles = [User::ROLE_ADMIN, User::ROLE_PAYER];
+        if (!in_array($user->role, $allowedRoles)) {
+            Log::warning('Unauthorized role for creating user:', [
+                'user_id' => $user->id,
+                'role' => $user->role
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized'
             ], 403);
         }
 
-        $validator = Validator::make($request->all(), [
+        $rules = [
             'email' => 'required|string|email|max:255|unique:users,email',
             'phone' => 'required|string|regex:/^0[0-9]{9}$/|unique:users,phone',
             'password' => 'required|string|min:6|confirmed',
-            'role' => 'required|in:admin,user,navigator,payer,guest,claims',
-            'payer_id' => 'required_if:role,payer|exists:payers,id|nullable',
+            'role' => 'required|in:user,navigator,claims',
             'is_active' => 'sometimes|boolean',
-        ], [
+        ];
+
+        if ($user->role === User::ROLE_ADMIN && $request->role === 'payer') {
+            $rules['payer_id'] = 'required|exists:payers,id';
+        } elseif ($request->role === 'user') {
+            $rules['payer_id'] = 'required|exists:payers,id';
+        }
+
+        $validator = Validator::make($request->all(), $rules, [
             'phone.regex' => 'Phone number must be 10 digits starting with 0 (e.g., 0712345678).'
         ]);
 
@@ -149,26 +229,49 @@ class AdminUserController extends Controller
         }
 
         try {
-            $user = DB::transaction(function () use ($request) {
+            $payerId = $request->role === 'user' ? $request->payer_id : ($request->role === 'payer' && $user->isAdmin() ? $request->payer_id : null);
+            if ($user->role === User::ROLE_PAYER) {
+                if (!$user->payer_id) {
+                    Log::warning('Payer has no payer_id:', ['user_id' => $user->id]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payer ID not set for this user'
+                    ], 403);
+                }
+                $payerId = $user->payer_id; // Force payer_id for ROLE_PAYER
+            }
+
+            $newUser = DB::transaction(function () use ($request, $payerId) {
                 return User::create([
                     'email' => $request->email,
                     'phone' => $request->phone,
                     'password' => Hash::make($request->password),
                     'role' => $request->role,
-                    'payer_id' => $request->role === User::ROLE_PAYER ? $request->payer_id : null,
+                    'payer_id' => $payerId,
                     'is_active' => $request->is_active ?? true,
                 ]);
             });
 
-            Log::info('User created successfully:', ['user_id' => $user->id, 'email' => $user->email]);
+            Log::info('User created successfully:', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'new_user_id' => $newUser->id,
+                'new_user_role' => $newUser->role,
+                'payer_id' => $payerId
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'User created successfully',
-                'user' => $user->only(['id', 'email', 'phone', 'role', 'payer_id', 'is_active'])
+                'user' => $newUser->only(['id', 'email', 'phone', 'role', 'payer_id', 'is_active'])
             ], 201);
         } catch (\Exception $e) {
-            Log::error('User creation error:', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            Log::error('User creation error:', [
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'User creation failed',
@@ -178,26 +281,60 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Update a user (admin only).
+     * Update a user (admin, payer).
      */
     public function update(Request $request, $id)
     {
-        if (!$request->user()->isAdmin()) {
-            Log::warning('Unauthorized attempt to update user:', ['user_id' => $request->user()->id, 'target_user_id' => $id]);
+        $user = $request->user();
+        Log::debug('update debug:', [
+            'user_exists' => !empty($user),
+            'user_id' => $user?->id,
+            'role' => $user?->role,
+            'is_active' => $user?->isActive(),
+            'payer_id' => $user?->payer_id,
+            'target_user_id' => $id
+        ]);
+
+        if (!$user || !$user->isActive()) {
+            Log::warning('Unauthorized attempt to update user:', [
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'target_user_id' => $id
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        $allowedRoles = [User::ROLE_ADMIN, User::ROLE_PAYER];
+        if (!in_array($user->role, $allowedRoles)) {
+            Log::warning('Unauthorized role for updating user:', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'target_user_id' => $id
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized'
             ], 403);
         }
 
-        $validator = Validator::make($request->all(), [
+        $rules = [
             'email' => 'sometimes|string|email|max:255|unique:users,email,' . $id,
             'phone' => 'sometimes|string|regex:/^0[0-9]{9}$/|unique:users,phone,' . $id,
-            'role' => 'sometimes|in:admin,user,navigator,payer,guest,claims',
-            'payer_id' => 'required_if:role,payer|exists:payers,id|nullable',
+            'role' => 'sometimes|in:user,navigator,claims',
             'is_active' => 'sometimes|boolean',
             'password' => 'sometimes|string|min:6|confirmed',
-        ], [
+        ];
+
+        if ($user->role === User::ROLE_ADMIN && $request->role === 'payer') {
+            $rules['payer_id'] = 'required|exists:payers,id';
+        } elseif ($request->has('role') && $request->role === 'user') {
+            $rules['payer_id'] = 'required|exists:payers,id';
+        }
+
+        $validator = Validator::make($request->all(), $rules, [
             'phone.regex' => 'Phone number must be 10 digits starting with 0 (e.g., 0712345678).'
         ]);
 
@@ -211,9 +348,9 @@ class AdminUserController extends Controller
         }
 
         try {
-            $user = User::findOrFail($id);
+            $targetUser = User::findOrFail($id);
 
-            if ($user->id === $request->user()->id) {
+            if ($user->id === $targetUser->id) {
                 Log::warning('Attempt to update own account:', ['user_id' => $user->id]);
                 return response()->json([
                     'success' => false,
@@ -221,25 +358,67 @@ class AdminUserController extends Controller
                 ], 403);
             }
 
-            $data = $request->only(['email', 'phone', 'role', 'is_active']);
-            if ($request->has('role')) {
-                $data['payer_id'] = $request->role === User::ROLE_PAYER ? $request->payer_id : null;
+            if ($user->role === User::ROLE_PAYER) {
+                if (!$user->payer_id) {
+                    Log::warning('Payer has no payer_id:', ['user_id' => $user->id]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payer ID not set for this user'
+                    ], 403);
+                }
+                if ($targetUser->payer_id !== $user->payer_id) {
+                    Log::warning('Payer unauthorized to update user:', [
+                        'user_id' => $user->id,
+                        'target_user_id' => $id,
+                        'payer_id' => $user->payer_id
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized to update this user'
+                    ], 403);
+                }
             }
+
+            $data = $request->only(['email', 'phone', 'role', 'is_active']);
             if ($request->has('password')) {
                 $data['password'] = Hash::make($request->password);
             }
+            if ($request->has('role')) {
+                $data['payer_id'] = $request->role === 'user' ? $request->payer_id : ($request->role === 'payer' && $user->isAdmin() ? $request->payer_id : null);
+                if ($user->role === User::ROLE_PAYER && $request->role === 'user') {
+                    $data['payer_id'] = $user->payer_id; // Force payer_id for ROLE_PAYER
+                }
+            }
 
-            $user->update($data);
+            $targetUser->update($data);
 
-            Log::info('User updated successfully:', ['user_id' => $user->id, 'email' => $user->email]);
+            Log::info('User updated successfully:', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'target_user_id' => $targetUser->id,
+                'target_user_role' => $targetUser->role,
+                'payer_id' => $data['payer_id'] ?? null
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'User updated successfully',
-                'user' => $user->only(['id', 'email', 'phone', 'role', 'payer_id', 'is_active'])
+                'user' => $targetUser->only(['id', 'email', 'phone', 'role', 'payer_id', 'is_active'])
             ], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::error('User not found:', ['user_id' => $id]);
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found'
+            ], 404);
         } catch (\Exception $e) {
-            Log::error('User update error:', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            Log::error('User update error:', [
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'target_user_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update user',
@@ -249,12 +428,39 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Delete a user (admin only).
+     * Delete a user (admin, payer).
      */
     public function destroy(Request $request, $id)
     {
-        if (!$request->user()->isAdmin()) {
-            Log::warning('Unauthorized attempt to delete user:', ['user_id' => $request->user()->id, 'target_user_id' => $id]);
+        $user = $request->user();
+        Log::debug('destroy debug:', [
+            'user_exists' => !empty($user),
+            'user_id' => $user?->id,
+            'role' => $user?->role,
+            'is_active' => $user?->isActive(),
+            'payer_id' => $user?->payer_id,
+            'target_user_id' => $id
+        ]);
+
+        if (!$user || !$user->isActive()) {
+            Log::warning('Unauthorized attempt to delete user:', [
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'target_user_id' => $id
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        $allowedRoles = [User::ROLE_ADMIN, User::ROLE_PAYER];
+        if (!in_array($user->role, $allowedRoles)) {
+            Log::warning('Unauthorized role for deleting user:', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'target_user_id' => $id
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized'
@@ -263,9 +469,9 @@ class AdminUserController extends Controller
 
         DB::beginTransaction();
         try {
-            $user = User::findOrFail($id);
+            $targetUser = User::findOrFail($id);
 
-            if ($user->id === $request->user()->id) {
+            if ($user->id === $targetUser->id) {
                 Log::warning('Attempt to delete own account:', ['user_id' => $user->id]);
                 DB::rollBack();
                 return response()->json([
@@ -274,10 +480,38 @@ class AdminUserController extends Controller
                 ], 403);
             }
 
-            $user->delete();
+            if ($user->role === User::ROLE_PAYER) {
+                if (!$user->payer_id) {
+                    Log::warning('Payer has no payer_id:', ['user_id' => $user->id]);
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payer ID not set for this user'
+                    ], 403);
+                }
+                if ($targetUser->payer_id !== $user->payer_id) {
+                    Log::warning('Payer unauthorized to delete user:', [
+                        'user_id' => $user->id,
+                        'target_user_id' => $id,
+                        'payer_id' => $user->payer_id
+                    ]);
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized to delete this user'
+                    ], 403);
+                }
+            }
+
+            $targetUser->delete();
             DB::commit();
 
-            Log::info('User deleted successfully:', ['user_id' => $id]);
+            Log::info('User deleted successfully:', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'target_user_id' => $id,
+                'payer_id' => $user->payer_id ?? null
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -292,10 +526,69 @@ class AdminUserController extends Controller
             ], 404);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('User deletion error:', ['user_id' => $id, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            Log::error('User deletion error:', [
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'target_user_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete user',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Get available payers for dropdown.
+     */
+    public function getPayers(Request $request)
+    {
+        try {
+            $user = $request->user();
+            Log::debug('getPayers debug:', [
+                'user_exists' => !empty($user),
+                'user_id' => $user?->id,
+                'role' => $user?->role,
+                'is_active' => $user?->isActive(),
+            ]);
+
+            if (!$user || !$user->isActive()) {
+                Log::warning('Unauthorized attempt to fetch payers:', [
+                    'user_id' => $user?->id,
+                    'role' => $user?->role
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            $payers = Payer::select('id', 'name')->get();
+
+            Log::info('Payers retrieved successfully:', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'count' => $payers->count(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payers retrieved successfully',
+                'payers' => $payers
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error fetching payers:', [
+                'user_id' => $request->user()?->id,
+                'role' => $request->user()?->role,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch payers',
                 'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }

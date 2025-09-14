@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up()
     {
-        // Create insurance table
+        // Create insurance table (without onboarding_id initially)
         Schema::create('insurance', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
@@ -26,8 +26,7 @@ return new class extends Migration
         // Create onboardings table
         Schema::create('onboardings', function (Blueprint $table) {
             $table->id();
-            $table->unique('user_id');
-            $table->foreignId('user_id')->unique('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('user_id')->unique()->constrained()->onDelete('cascade');
             $table->string('first_name');
             $table->string('middle_name')->nullable();
             $table->string('last_name');
@@ -40,7 +39,7 @@ return new class extends Migration
             $table->json('medications')->nullable();
             $table->integer('age');
             $table->enum('sex', ['male', 'female', 'other']);
-            $table->date('date_of_onboarding');
+            $table->date('date_of_onboarding')->nullable();
             $table->string('emergency_contact_name');
             $table->string('emergency_contact_phone', 20);
             $table->string('emergency_contact_relation');
@@ -91,7 +90,7 @@ return new class extends Migration
             $table->softDeletes();
         });
 
-        // Create mpesa table
+        // Create mpesa table (without onboarding_id initially)
         Schema::create('mpesa', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
@@ -107,19 +106,20 @@ return new class extends Migration
             $table->index('phone_number');
         });
 
-        // Add onboarding_id foreign key to insurance and mpesa
+        // Add onboarding_id column and foreign key to insurance table
         Schema::table('insurance', function (Blueprint $table) {
-            $table->foreignId('onboarding_id')->nullable()->constrained('onboardings')->onDelete('set null')->after('id');
+            $table->foreignId('onboarding_id')->nullable()->after('id')->constrained('onboardings')->onDelete('set null');
         });
 
+        // Add onboarding_id column and foreign key to mpesa table
         Schema::table('mpesa', function (Blueprint $table) {
-            $table->foreignId('onboarding_id')->nullable()->constrained('onboardings')->onDelete('set null')->after('id');
+            $table->foreignId('onboarding_id')->nullable()->after('id')->constrained('onboardings')->onDelete('set null');
         });
     }
 
     public function down()
     {
-        // Drop foreign keys first
+        // Drop foreign keys and columns
         Schema::table('mpesa', function (Blueprint $table) {
             $table->dropForeign(['onboarding_id']);
             $table->dropColumn('onboarding_id');
