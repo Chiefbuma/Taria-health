@@ -11,14 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('payers', function (Blueprint $table) {
+        Schema::create('designations', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
+            $table->string('name')->unique();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
-            $table->softDeletes(); // For soft delete functionality
-            $table->index('name'); // Added index for searching by payer name
-            $table->index('is_active'); // Added index for filtering by active status
+            $table->softDeletes();
+            $table->index('name');
+            $table->index('is_active');
         });
     }
 
@@ -27,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('payers');
+        Schema::dropIfExists('designations');
     }
 };

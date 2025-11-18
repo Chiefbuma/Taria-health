@@ -1,5 +1,5 @@
 <?php
-
+// app/Models/User.php
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -9,138 +9,158 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable, HasApiTokens;
+    use HasApiTokens, HasFactory, Notifiable;
 
-    const ROLE_ADMIN = 'admin';
-    const ROLE_USER = 'user';
-    const ROLE_NAVIGATOR = 'navigator';
-    const ROLE_PAYER = 'payer';
-    const ROLE_GUEST = 'guest';
-    const ROLE_CLAIMS = 'claims';
-
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
     protected $fillable = [
         'email',
-        'phone',
-        'password',
+        'staff_number',
         'role',
         'is_active',
-        'payer_id',
+        'password'
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
-        
+    ];
+
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'is_active' => 'boolean',
     ];
 
     /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
+     * Get the staff record associated with the user.
      */
-    protected function casts(): array
+    public function staff()
     {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'is_active' => 'boolean',
-        ];
+        return $this->belongsTo(Staff::class, 'staff_number', 'staff_number');
+    }
+
+    public function applications()
+    {
+        return $this->hasMany(Application::class);
+    }
+
+    public function documents()
+    {
+        return $this->hasMany(Document::class);
+    }
+
+    public function approvalLogs()
+    {
+        return $this->hasMany(ApprovalLog::class, 'approver_id');
+    }
+
+    public function isApprover()
+    {
+        return in_array($this->role, ['chair', 'treasurer', 'disbursement']);
     }
 
     /**
-     * Check if user has a specific role
+     * Get the user's full name through staff relationship.
      */
-    public function hasRole(string $role): bool
+    public function getFullNameAttribute()
+    {
+        return $this->staff ? $this->staff->full_name : 'N/A';
+    }
+
+    /**
+     * Get the user's designation name through staff->designation relationship.
+     */
+    public function getDesignationAttribute()
+    {
+        if ($this->staff && $this->staff->designation) {
+            return $this->staff->designation->name ?? 'N/A';
+        }
+        return 'N/A';
+    }
+
+    /**
+     * Get the user's designation ID through staff relationship.
+     */
+    public function getDesignationIdAttribute()
+    {
+        return $this->staff ? $this->staff->designation_id : null;
+    }
+
+    /**
+     * Get the user's business unit through staff relationship.
+     */
+    public function getBusinessUnitAttribute()
+    {
+        return $this->staff ? $this->staff->business_unit : 'N/A';
+    }
+
+    /**
+     * Get the user's personal email through staff relationship.
+     */
+    public function getPersonalEmailAttribute()
+    {
+        return $this->staff ? $this->staff->personal_email : 'N/A';
+    }
+
+    /**
+     * Get the user's mobile number through staff relationship.
+     */
+    public function getMobileAttribute()
+    {
+        return $this->staff ? $this->staff->mobile : 'N/A';
+    }
+
+    /**
+     * Get the user's date of joining through staff relationship.
+     */
+    public function getDateOfJoiningAttribute()
+    {
+        return $this->staff ? $this->staff->date_of_joining : null;
+    }
+
+    /**
+     * Scope a query to only include active users.
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
+    }
+
+    /**
+     * Scope a query to only include users with specific roles.
+     */
+    public function scopeByRole($query, $role)
+    {
+        return $query->where('role', $role);
+    }
+
+    /**
+     * Check if user has a specific role.
+     */
+    public function hasRole($role)
     {
         return $this->role === $role;
     }
 
     /**
-     * Check if user has any of the given roles
+     * Check if user has any of the given roles.
      */
-    public function hasAnyRole(array $roles): bool
+    public function hasAnyRole(array $roles)
     {
         return in_array($this->role, $roles);
     }
 
     /**
-     * Check if user is admin
+     * Get the user's display name (for use in UI).
      */
-    public function isAdmin(): bool
+    public function getDisplayNameAttribute()
     {
-        return $this->hasRole(self::ROLE_ADMIN);
+        return $this->full_name . ' (' . $this->staff_number . ')';
     }
 
     /**
-     * Check if user is navigator
+     * Get the user's role in a formatted way.
      */
-    public function isNavigator(): bool
+    public function getFormattedRoleAttribute()
     {
-        return $this->hasRole(self::ROLE_NAVIGATOR);
-    }
-
-    /**
-     * Check if user is payer
-     */
-    public function isPayer(): bool
-    {
-        return $this->hasRole(self::ROLE_PAYER);
-    }
-
-    /**
-     * Check if user is guest
-     */
-    public function isGuest(): bool
-    {
-        return $this->hasRole(self::ROLE_GUEST);
-    }
-
-    /**
-     * Check if user is claims
-     */
-    public function isClaims(): bool
-    {
-        return $this->hasRole(self::ROLE_CLAIMS);
-    }
-
-    /**
-     * Check if user is active
-     */
-    public function isActive(): bool
-    {
-        return $this->is_active;
-    }
-
-    /**
-     * Get all available roles
-     */
-    public static function getAvailableRoles(): array
-    {
-        return [
-            self::ROLE_ADMIN,
-            self::ROLE_USER,
-            self::ROLE_NAVIGATOR,
-            self::ROLE_PAYER,
-            self::ROLE_GUEST,
-            self::ROLE_CLAIMS,
-        ];
-    }
-
-    /**
-     * Get the payer associated with the user.
-     */
-    public function payer()
-    {
-        return $this->belongsTo(Payer::class);
+        return ucfirst($this->role);
     }
 }
